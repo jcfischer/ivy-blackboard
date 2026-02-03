@@ -66,6 +66,26 @@ export function formatRelativeTime(isoString: string): string {
 }
 
 /**
+ * Format events as a timeline for human display.
+ */
+export function formatTimeline(
+  events: Array<{
+    timestamp: string;
+    event_type: string;
+    actor_id: string | null;
+    summary: string;
+  }>
+): string {
+  return events
+    .map((e) => {
+      const time = formatRelativeTime(e.timestamp);
+      const actor = e.actor_id ? e.actor_id.slice(0, 12) : "system";
+      return `[${time}] ${e.event_type} [${actor}] ${e.summary}`;
+    })
+    .join("\n");
+}
+
+/**
  * Print output in the appropriate format based on --json flag.
  */
 export function printOutput<T>(
