@@ -75,6 +75,68 @@ export function createServer(
           return jsonResponse({ count: events.length, items: events });
         }
 
+        // SSE endpoint for live event streaming
+        if (url.pathname === "/api/events/stream") {
+          const lastEventId = req.headers.get("Last-Event-ID");
+          let lastId = lastEventId ? parseInt(lastEventId, 10) : 0;
+
+          // If no Last-Event-ID, start from current max
+          if (!lastId) {
+            const row = db
+              .query("SELECT MAX(id) as max_id FROM events")
+              .get() as { max_id: number | null } | null;
+            lastId = row?.max_id ?? 0;
+          }
+
+          const stream = new ReadableStream({
+            start(controller) {
+              const encoder = new TextEncoder();
+
+              const send = (data: string, id?: number) => {
+                try {
+                  if (id) controller.enqueue(encoder.encode(`id: ${id}\n`));
+                  controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+                } catch {
+                  clearInterval(interval);
+                }
+              };
+
+              // Send initial connection message
+              send(JSON.stringify({ type: "connected", last_id: lastId }));
+
+              const interval = setInterval(() => {
+                try {
+                  const newEvents = db
+                    .query("SELECT * FROM events WHERE id > ? ORDER BY id ASC LIMIT 50")
+                    .all(lastId) as Array<{ id: number; [key: string]: any }>;
+
+                  for (const event of newEvents) {
+                    send(JSON.stringify(event), event.id);
+                    lastId = event.id;
+                  }
+                } catch {
+                  clearInterval(interval);
+                  controller.close();
+                }
+              }, 2000);
+
+              // Clean up on abort
+              req.signal.addEventListener("abort", () => {
+                clearInterval(interval);
+              });
+            },
+          });
+
+          return new Response(stream, {
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache",
+              Connection: "keep-alive",
+              ...CORS_HEADERS,
+            },
+          });
+        }
+
         if (url.pathname === "/api/projects") {
           const projects = listProjects(db);
           return jsonResponse({ count: projects.length, items: projects });

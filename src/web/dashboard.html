@@ -206,31 +206,64 @@
       }
     }
 
+    // SSE-powered events (with polling fallback)
+    const MAX_EVENT_LINES = 30;
+    let eventLines = [];
+    let sseConnected = false;
+
+    function renderEvents() {
+      const el = document.getElementById('events-container');
+      if (eventLines.length === 0) {
+        el.innerHTML = '<span class="empty">No recent events.</span>';
+        return;
+      }
+      el.innerHTML = eventLines.join('');
+    }
+
+    function addEventLine(e) {
+      const actor = e.actor_id ? e.actor_id.slice(0, 12) : 'system';
+      const line = `<div class="event-line">
+        <span style="color:#484f58">${relTime(e.timestamp)}</span>
+        <span class="event-type">${e.event_type}</span>
+        [${actor}]
+        <span class="event-summary">${e.summary}</span>
+      </div>`;
+      eventLines.unshift(line);
+      if (eventLines.length > MAX_EVENT_LINES) eventLines.pop();
+    }
+
+    function connectSSE() {
+      try {
+        const es = new EventSource(API + '/api/events/stream');
+        es.onopen = () => { sseConnected = true; };
+        es.onmessage = (msg) => {
+          try {
+            const data = JSON.parse(msg.data);
+            if (data.type === 'connected') return;
+            addEventLine(data);
+            renderEvents();
+          } catch {}
+        };
+        es.onerror = () => {
+          sseConnected = false;
+          es.close();
+          setTimeout(connectSSE, 5000);
+        };
+      } catch {
+        sseConnected = false;
+      }
+    }
+
     async function fetchEvents() {
+      if (sseConnected) return;
       try {
         const res = await fetch(API + '/api/events?limit=20');
         const data = await res.json();
-        const el = document.getElementById('events-container');
-
-        if (!data.items || data.items.length === 0) {
-          el.innerHTML = '<span class="empty">No recent events.</span>';
-          return;
-        }
-
-        let html = '';
-        for (const e of data.items.reverse()) {
-          const actor = e.actor_id ? e.actor_id.slice(0, 12) : 'system';
-          html += `<div class="event-line">
-            <span style="color:#484f58">${relTime(e.timestamp)}</span>
-            <span class="event-type">${e.event_type}</span>
-            [${actor}]
-            <span class="event-summary">${e.summary}</span>
-          </div>`;
-        }
-        el.innerHTML = html;
-      } catch (e) {
-        document.getElementById('events-container').innerHTML = '<span class="empty">Error loading events.</span>';
-      }
+        if (!data.items || data.items.length === 0) return;
+        eventLines = [];
+        for (const e of data.items.reverse()) { addEventLine(e); }
+        renderEvents();
+      } catch {}
     }
 
     async function refresh() {
@@ -239,6 +272,7 @@
     }
 
     refresh();
+    connectSSE();
     setInterval(refresh, 5000);
   </script>
 </body>
