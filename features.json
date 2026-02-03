@@ -1,0 +1,142 @@
+[
+  {
+    "id": "F-1",
+    "name": "SQLite schema and database initialization",
+    "description": "Create the SQLite database with WAL mode, 6 tables (agents, projects, work_items, heartbeats, events, schema_version), indexes, and migration support. Dual-location resolution: .blackboard/local.db (per-project) and ~/.pai/blackboard/local.db (operator-wide).",
+    "dependencies": [],
+    "priority": 1
+  },
+  {
+    "id": "F-2",
+    "name": "CLI framework and command routing",
+    "description": "Set up the blackboard CLI entry point with Commander.js. Global flags: --json, --db <path>. Database resolution chain: --db > $BLACKBOARD_DB > .blackboard/local.db > ~/.pai/blackboard/local.db. Subcommand routing for agent, project, work, observe, serve, sweep, status.",
+    "dependencies": ["F-1"],
+    "priority": 2
+  },
+  {
+    "id": "F-3",
+    "name": "Agent register and deregister commands",
+    "description": "Implement 'blackboard agent register' (session_id generation, PID capture, parent_id for delegates, project context, current_work) and 'blackboard agent deregister' (mark completed, release claimed items, log event). Both emit events to the events table.",
+    "dependencies": ["F-2"],
+    "priority": 3
+  },
+  {
+    "id": "F-4",
+    "name": "Agent heartbeat command",
+    "description": "Implement 'blackboard agent heartbeat --session <id>' that updates last_seen_at in agents table and appends to heartbeats table. Optional --progress flag for human-readable progress notes. Heartbeat events logged only when progress is provided.",
+    "dependencies": ["F-3"],
+    "priority": 4
+  },
+  {
+    "id": "F-5",
+    "name": "Agent list command",
+    "description": "Implement 'blackboard agent list' showing active agents with session_id, name, project, status, last_seen, PID. Flags: --all (include completed/stale), --status <filter>, --json. Delegates shown indented under parent.",
+    "dependencies": ["F-3"],
+    "priority": 5
+  },
+  {
+    "id": "F-6",
+    "name": "Stale agent detection and sweep",
+    "description": "Implement sweepStaleAgents: find agents where last_seen_at exceeds stale threshold (default 5min), verify PID is dead via process.kill(pid, 0), atomically mark stale and release claimed items. Runs as side-effect of every CLI invocation. 'blackboard sweep' command for explicit cleanup. Prune old heartbeat records.",
+    "dependencies": ["F-4"],
+    "priority": 6
+  },
+  {
+    "id": "F-7",
+    "name": "Project register and list commands",
+    "description": "Implement 'blackboard project register --id <slug> --name <display> --path <local> --repo <remote>' and 'blackboard project list' showing registered projects with active agent count. Emit project_registered event.",
+    "dependencies": ["F-2"],
+    "priority": 7
+  },
+  {
+    "id": "F-8",
+    "name": "Work item create and claim commands",
+    "description": "Implement 'blackboard work claim' with atomic SQLite transaction (UPDATE WHERE status='available'). Create-and-claim in one step when --title is provided. Sources: github, local, operator. Priority: P1/P2/P3. Emit work_claimed event. Return 0 rows on conflict (another agent claimed first).",
+    "dependencies": ["F-7"],
+    "priority": 8
+  },
+  {
+    "id": "F-9",
+    "name": "Work item release, complete, and block commands",
+    "description": "Implement 'blackboard work release' (set available, clear claimed_by), 'blackboard work complete' (set completed, record timestamp), and blocked_by support. Each emits corresponding event.",
+    "dependencies": ["F-8"],
+    "priority": 9
+  },
+  {
+    "id": "F-10",
+    "name": "Work item list and status commands",
+    "description": "Implement 'blackboard work list' with filters: --project, --status, --json. Priority-sorted display. 'blackboard work status <id>' for detailed single-item view including claim history from events table.",
+    "dependencies": ["F-8"],
+    "priority": 10
+  },
+  {
+    "id": "F-11",
+    "name": "Project status command with agent and work summary",
+    "description": "Implement 'blackboard project status <id>' showing project details, active agents working on it, and work items grouped by status. Joins across agents, work_items, and projects tables.",
+    "dependencies": ["F-10"],
+    "priority": 11
+  },
+  {
+    "id": "F-12",
+    "name": "Observe command — event log with cursor",
+    "description": "Implement 'blackboard observe' reading from events table. Maintains a per-session cursor (last-seen event ID). Flags: --since <time|duration>, --filter <event_types>, --session <id>, --json. Human-readable timeline format by default.",
+    "dependencies": ["F-6"],
+    "priority": 12
+  },
+  {
+    "id": "F-13",
+    "name": "Overall status command",
+    "description": "Implement 'blackboard status' showing aggregate health: agent counts by status, work item counts by status, project count, events in last 24h, database size. Active agents listed with current work. --json for programmatic use.",
+    "dependencies": ["F-11", "F-12"],
+    "priority": 13
+  },
+  {
+    "id": "F-14",
+    "name": "Content filtering on text fields",
+    "description": "Implement sanitizeBlackboardText: strip code blocks, HTML tags, template literals, enforce 500-char limit. Applied to current_work, progress, summary, and title fields on all write operations. Defense-in-depth against prompt injection between agents.",
+    "dependencies": ["F-3"],
+    "priority": 14
+  },
+  {
+    "id": "F-15",
+    "name": "File permissions enforcement",
+    "description": "On database creation, set 0600 on .db/.db-wal/.db-shm files and 0700 on containing directory. Refuse to open databases with group/world-readable permissions. Log warning on permission issues.",
+    "dependencies": ["F-1"],
+    "priority": 15
+  },
+  {
+    "id": "F-16",
+    "name": "Web dashboard server",
+    "description": "Implement 'blackboard serve' — Bun HTTP server on 127.0.0.1:3141 (configurable port). Read-only SQLite access. API endpoints: /api/status, /api/agents, /api/work, /api/events?since=. --background flag for daemon mode. Never bind to 0.0.0.0.",
+    "dependencies": ["F-13"],
+    "priority": 16
+  },
+  {
+    "id": "F-17",
+    "name": "Web dashboard HTML page",
+    "description": "Single self-contained HTML page served from memory. Dark theme (GitHub-style). Summary cards (agent/work counts), agent table (with delegate indentation), work items table (priority-sorted), event timeline. Inline CSS and JS, no external dependencies.",
+    "dependencies": ["F-16"],
+    "priority": 17
+  },
+  {
+    "id": "F-18",
+    "name": "SSE live updates for dashboard",
+    "description": "Implement /api/events/stream SSE endpoint. Server polls events table every 2s, sends new events to connected clients. Dashboard auto-refreshes on SSE message. Polling fallback every 15s. Reconnect on SSE error with 5s backoff.",
+    "dependencies": ["F-17"],
+    "priority": 18
+  },
+  {
+    "id": "F-19",
+    "name": "Spoke export integration",
+    "description": "Implement 'blackboard status --export' that generates .collab/status.yaml enriched with local blackboard data (active agents, current work, recent progress). Additive — works without local blackboard by using git/test data only.",
+    "dependencies": ["F-13"],
+    "priority": 19
+  },
+  {
+    "id": "F-20",
+    "name": "Configuration file support",
+    "description": "Load config from ~/.pai/blackboard/config.json with schema version. Configurable: heartbeat interval, stale threshold, prune intervals, web server port, content filter settings. Environment variable overrides. Sensible defaults when no config exists.",
+    "dependencies": ["F-2"],
+    "priority": 20
+  }
+]

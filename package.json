@@ -1,0 +1,21 @@
+{
+  "name": "ivy-blackboard",
+  "version": "0.1.0",
+  "description": "Local Agent Blackboard — SQLite-based multi-agent coordination for PAI",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "blackboard": "src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "test": "bun test",
+    "build": "bun build src/index.ts --outdir dist --target node"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7"
+  },
+  "license": "MIT"
+}
