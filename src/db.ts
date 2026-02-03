@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
+import { setSecurePermissions, validatePermissions } from "./permissions";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import {
@@ -62,6 +63,13 @@ export function openDatabase(path: string): Database {
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
 
+  const isExisting = existsSync(path);
+
+  // Validate permissions on existing database
+  if (isExisting) {
+    validatePermissions(path);
+  }
+
   const db = new Database(path, { create: true });
 
   // Set PRAGMAs (must be set on every connection)
@@ -81,6 +89,8 @@ export function openDatabase(path: string): Database {
     db.exec(CREATE_TABLES_SQL);
     db.exec(CREATE_INDEXES_SQL);
     db.exec(SEED_VERSION_SQL);
+    // Set secure permissions on newly created database
+    setSecurePermissions(path);
   } else {
     // Existing database — check version
     const version = getSchemaVersion(db);
