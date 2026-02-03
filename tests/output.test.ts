@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { formatJson, formatTable } from "../src/output";
+import { formatJson, formatTable, formatRelativeTime } from "../src/output";
 
 describe("formatJson", () => {
   it("wraps single item with ok and timestamp", () => {
@@ -61,5 +61,39 @@ describe("formatTable", () => {
     const lines = output.split("\n").filter(Boolean);
     // Header and data lines should have consistent spacing
     expect(lines.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("formatRelativeTime", () => {
+  it("returns 'just now' for timestamps within 60 seconds", () => {
+    const now = new Date();
+    expect(formatRelativeTime(now.toISOString())).toBe("just now");
+
+    const thirtySecondsAgo = new Date(now.getTime() - 30_000);
+    expect(formatRelativeTime(thirtySecondsAgo.toISOString())).toBe("just now");
+  });
+
+  it("returns 'Xm ago' for minutes", () => {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60_000);
+    expect(formatRelativeTime(fiveMinAgo.toISOString())).toBe("5m ago");
+
+    const oneMinAgo = new Date(Date.now() - 90_000); // 1.5 min rounds to 1m
+    expect(formatRelativeTime(oneMinAgo.toISOString())).toBe("1m ago");
+  });
+
+  it("returns 'Xh ago' for hours", () => {
+    const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+    expect(formatRelativeTime(twoHoursAgo.toISOString())).toBe("2h ago");
+
+    const oneHourAgo = new Date(Date.now() - 3_600_000);
+    expect(formatRelativeTime(oneHourAgo.toISOString())).toBe("1h ago");
+  });
+
+  it("returns 'Xd ago' for days", () => {
+    const threeDaysAgo = new Date(Date.now() - 3 * 86_400_000);
+    expect(formatRelativeTime(threeDaysAgo.toISOString())).toBe("3d ago");
+
+    const oneDayAgo = new Date(Date.now() - 86_400_000);
+    expect(formatRelativeTime(oneDayAgo.toISOString())).toBe("1d ago");
   });
 });

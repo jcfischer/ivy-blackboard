@@ -317,6 +317,126 @@ describe("CLI agent heartbeat", () => {
   });
 });
 
+// F-5: listAgents
+describe("listAgents", () => {
+  test("returns only active/idle agents by default", async () => {
+    const { registerAgent, deregisterAgent, listAgents } = await import("../src/agent");
+    const a1 = registerAgent(db, { name: "Active1" });
+    const a2 = registerAgent(db, { name: "Active2" });
+    const a3 = registerAgent(db, { name: "Completed" });
+    deregisterAgent(db, a3.session_id);
+
+    const result = listAgents(db);
+    expect(result.length).toBe(2);
+    expect(result.every((a: any) => a.status === "active" || a.status === "idle")).toBe(true);
+  });
+
+  test("returns all agents with all flag", async () => {
+    const { registerAgent, deregisterAgent, listAgents } = await import("../src/agent");
+    registerAgent(db, { name: "Active" });
+    const completed = registerAgent(db, { name: "Completed" });
+    deregisterAgent(db, completed.session_id);
+
+    const result = listAgents(db, { all: true });
+    expect(result.length).toBe(2);
+  });
+
+  test("filters by comma-separated status", async () => {
+    const { registerAgent, deregisterAgent, listAgents } = await import("../src/agent");
+    registerAgent(db, { name: "Active" });
+    const completed = registerAgent(db, { name: "Completed" });
+    deregisterAgent(db, completed.session_id);
+
+    const activeOnly = listAgents(db, { status: "active" });
+    expect(activeOnly.length).toBe(1);
+    expect(activeOnly[0].agent_name).toBe("Active");
+
+    const completedOnly = listAgents(db, { status: "completed" });
+    expect(completedOnly.length).toBe(1);
+    expect(completedOnly[0].agent_name).toBe("Completed");
+
+    const both = listAgents(db, { status: "active,completed" });
+    expect(both.length).toBe(2);
+  });
+
+  test("orders by last_seen_at DESC", async () => {
+    const { registerAgent, sendHeartbeat, listAgents } = await import("../src/agent");
+    const a1 = registerAgent(db, { name: "Old" });
+    await Bun.sleep(10);
+    const a2 = registerAgent(db, { name: "New" });
+
+    const result = listAgents(db);
+    expect(result[0].agent_name).toBe("New");
+    expect(result[1].agent_name).toBe("Old");
+  });
+
+  test("throws on invalid status value", async () => {
+    const { listAgents } = await import("../src/agent");
+    expect(() => listAgents(db, { status: "bogus" })).toThrow("bogus");
+  });
+
+  test("returns empty array when no agents match", async () => {
+    const { listAgents } = await import("../src/agent");
+    const result = listAgents(db);
+    expect(result).toEqual([]);
+  });
+
+  test("returns full BlackboardAgent shape", async () => {
+    const { registerAgent, listAgents } = await import("../src/agent");
+    registerAgent(db, { name: "Ivy", project: "pai" });
+
+    const result = listAgents(db);
+    expect(result.length).toBe(1);
+    const agent = result[0];
+    expect(agent.session_id).toBeTruthy();
+    expect(agent.agent_name).toBe("Ivy");
+    expect(agent.project).toBe("pai");
+    expect(agent.status).toBe("active");
+    expect(agent.started_at).toBeTruthy();
+    expect(agent.last_seen_at).toBeTruthy();
+  });
+});
+
+// F-5 CLI list
+describe("CLI agent list", () => {
+  test("list --json outputs envelope with items", async () => {
+    // Register an agent first
+    const regProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "ListAgent"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    await new Response(regProc.stdout).text();
+    await regProc.exited;
+
+    const listProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "list"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const listText = await new Response(listProc.stdout).text();
+    await listProc.exited;
+
+    const json = JSON.parse(listText);
+    expect(json.ok).toBe(true);
+    expect(json.count).toBeGreaterThanOrEqual(1);
+    expect(json.items).toBeInstanceOf(Array);
+    expect(json.items[0].agent_name).toBe("ListAgent");
+  });
+
+  test("list --json returns empty when no agents", async () => {
+    const listProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "list"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const listText = await new Response(listProc.stdout).text();
+    await listProc.exited;
+
+    const json = JSON.parse(listText);
+    expect(json.ok).toBe(true);
+    expect(json.count).toBe(0);
+    expect(json.items).toEqual([]);
+  });
+});
+
 // T-3.1 + T-3.2: CLI commands (E2E via subprocess)
 describe("CLI agent register", () => {
   test("register --name outputs session details as JSON", async () => {

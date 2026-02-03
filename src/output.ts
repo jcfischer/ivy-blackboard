@@ -47,6 +47,25 @@ export function formatTable(headers: string[], rows: string[][]): string {
 }
 
 /**
+ * Format an ISO 8601 timestamp as a human-readable relative time string.
+ */
+export function formatRelativeTime(isoString: string): string {
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+
+  if (diffSeconds < 60) return "just now";
+
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+/**
  * Print output in the appropriate format based on --json flag.
  */
 export function printOutput<T>(

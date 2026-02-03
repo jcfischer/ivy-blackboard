@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import type { CommandContext } from "../context";
-import { registerAgent, deregisterAgent, sendHeartbeat } from "../agent";
-import { formatJson } from "../output";
+import { registerAgent, deregisterAgent, sendHeartbeat, listAgents } from "../agent";
+import { formatJson, formatTable, formatRelativeTime } from "../output";
 import { withErrorHandling } from "../errors";
 
 export function registerAgentCommands(
@@ -95,13 +95,31 @@ export function registerAgentCommands(
     .command("list")
     .description("List agent sessions")
     .option("--all", "Include completed and stale agents")
-    .option("--status <status>", "Filter by status")
-    .action(async () => {
-      const ctx = getContext();
-      if (ctx.options.json) {
-        console.log(JSON.stringify({ ok: true, count: 0, items: [], timestamp: new Date().toISOString() }, null, 2));
-      } else {
-        console.log("No agents registered.");
-      }
-    });
+    .option("--status <status>", "Filter by status (comma-separated)")
+    .action(
+      withErrorHandling(async (opts) => {
+        const ctx = getContext();
+        const agents = listAgents(ctx.db, {
+          all: opts.all,
+          status: opts.status,
+        });
+
+        if (ctx.options.json) {
+          console.log(formatJson(agents));
+        } else if (agents.length === 0) {
+          console.log("No active agents.");
+        } else {
+          const headers = ["SESSION", "NAME", "PROJECT", "STATUS", "LAST SEEN", "PID"];
+          const rows = agents.map((a) => [
+            a.session_id.slice(0, 12),
+            a.agent_name,
+            a.project ?? "-",
+            a.status,
+            formatRelativeTime(a.last_seen_at),
+            String(a.pid ?? "-"),
+          ]);
+          console.log(formatTable(headers, rows));
+        }
+      }, () => getContext().options.json)
+    );
 }

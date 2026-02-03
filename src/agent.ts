@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
+import { AGENT_STATUSES, type BlackboardAgent } from "./types";
 
 export interface RegisterAgentOptions {
   name: string;
@@ -196,4 +197,44 @@ export function sendHeartbeat(
     timestamp: now,
     progress,
   };
+}
+
+export interface ListAgentsOptions {
+  all?: boolean;
+  status?: string;
+}
+
+/**
+ * List agent sessions with optional filtering.
+ * Default: active and idle only. --all: all statuses. --status: comma-separated filter.
+ */
+export function listAgents(
+  db: Database,
+  opts?: ListAgentsOptions
+): BlackboardAgent[] {
+  if (opts?.status) {
+    const statuses = opts.status.split(",").map((s) => s.trim());
+    for (const s of statuses) {
+      if (!AGENT_STATUSES.includes(s as any)) {
+        throw new BlackboardError(
+          `Invalid status "${s}". Valid values: ${AGENT_STATUSES.join(", ")}`,
+          "INVALID_STATUS"
+        );
+      }
+    }
+    const placeholders = statuses.map(() => "?").join(", ");
+    return db
+      .query(`SELECT * FROM agents WHERE status IN (${placeholders}) ORDER BY last_seen_at DESC`)
+      .all(...statuses) as BlackboardAgent[];
+  }
+
+  if (opts?.all) {
+    return db
+      .query("SELECT * FROM agents ORDER BY last_seen_at DESC")
+      .all() as BlackboardAgent[];
+  }
+
+  return db
+    .query("SELECT * FROM agents WHERE status IN ('active', 'idle') ORDER BY last_seen_at DESC")
+    .all() as BlackboardAgent[];
 }
