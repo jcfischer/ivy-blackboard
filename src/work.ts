@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
-import { WORK_ITEM_SOURCES, WORK_ITEM_PRIORITIES } from "./types";
+import { WORK_ITEM_SOURCES, WORK_ITEM_PRIORITIES, WORK_ITEM_STATUSES } from "./types";
+import type { BlackboardWorkItem, BlackboardEvent } from "./types";
 
 export interface CreateWorkItemOptions {
   id: string;
@@ -250,4 +251,111 @@ export function createAndClaimWorkItem(
     claimed_at: now,
     created_at: now,
   };
+}
+
+export interface ListWorkItemsOptions {
+  all?: boolean;
+  status?: string;
+  priority?: string;
+  project?: string;
+}
+
+export interface WorkItemDetail {
+  item: BlackboardWorkItem;
+  history: BlackboardEvent[];
+}
+
+/**
+ * List work items with optional filters.
+ * Default: status='available'. Order: priority ASC (P1 first), created_at DESC.
+ */
+export function listWorkItems(
+  db: Database,
+  opts?: ListWorkItemsOptions
+): BlackboardWorkItem[] {
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (!opts?.all) {
+    if (opts?.status) {
+      const statuses = opts.status.split(",").map(s => s.trim());
+      for (const s of statuses) {
+        if (!WORK_ITEM_STATUSES.includes(s as any)) {
+          throw new BlackboardError(
+            `Invalid status "${s}". Valid values: ${WORK_ITEM_STATUSES.join(", ")}`,
+            "INVALID_STATUS"
+          );
+        }
+      }
+      conditions.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+      params.push(...statuses);
+    } else {
+      conditions.push("status = ?");
+      params.push("available");
+    }
+  } else if (opts?.status) {
+    // --all with --status: status filter takes precedence
+    const statuses = opts.status.split(",").map(s => s.trim());
+    for (const s of statuses) {
+      if (!WORK_ITEM_STATUSES.includes(s as any)) {
+        throw new BlackboardError(
+          `Invalid status "${s}". Valid values: ${WORK_ITEM_STATUSES.join(", ")}`,
+          "INVALID_STATUS"
+        );
+      }
+    }
+    conditions.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+    params.push(...statuses);
+  }
+
+  if (opts?.priority) {
+    const priorities = opts.priority.split(",").map(p => p.trim());
+    for (const p of priorities) {
+      if (!WORK_ITEM_PRIORITIES.includes(p as any)) {
+        throw new BlackboardError(
+          `Invalid priority "${p}". Valid values: ${WORK_ITEM_PRIORITIES.join(", ")}`,
+          "INVALID_PRIORITY"
+        );
+      }
+    }
+    conditions.push(`priority IN (${priorities.map(() => "?").join(", ")})`);
+    params.push(...priorities);
+  }
+
+  if (opts?.project) {
+    conditions.push("project_id = ?");
+    params.push(opts.project);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const sql = `SELECT * FROM work_items ${where} ORDER BY priority ASC, created_at DESC`;
+
+  return db.query(sql).all(...params) as BlackboardWorkItem[];
+}
+
+/**
+ * Get detailed status for a single work item, including event history.
+ */
+export function getWorkItemStatus(
+  db: Database,
+  itemId: string
+): WorkItemDetail {
+  const item = db
+    .query("SELECT * FROM work_items WHERE item_id = ?")
+    .get(itemId) as BlackboardWorkItem | null;
+
+  if (!item) {
+    throw new BlackboardError(
+      `Work item not found: ${itemId}`,
+      "WORK_ITEM_NOT_FOUND"
+    );
+  }
+
+  const history = db
+    .query(
+      "SELECT * FROM events WHERE target_id = ? AND target_type = 'work_item' ORDER BY timestamp ASC"
+    )
+    .all(itemId) as BlackboardEvent[];
+
+  return { item, history };
 }

@@ -233,7 +233,153 @@ describe("createAndClaimWorkItem", () => {
   });
 });
 
-// T-4.1: CLI E2E
+// F-10 T-1.1: listWorkItems
+describe("listWorkItems", () => {
+  test("returns available items by default", async () => {
+    const { createWorkItem, claimWorkItem, listWorkItems } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "avail-1", title: "Available" });
+    createWorkItem(db, { id: "claimed-1", title: "Claimed" });
+    const agent = registerAgent(db, { name: "Claimer" });
+    claimWorkItem(db, "claimed-1", agent.session_id);
+
+    const items = listWorkItems(db);
+    expect(items.length).toBe(1);
+    expect(items[0].item_id).toBe("avail-1");
+    expect(items[0].status).toBe("available");
+  });
+
+  test("orders by priority ASC then created_at DESC", async () => {
+    const { createWorkItem, listWorkItems } = await import("../src/work");
+
+    // Insert with explicit created_at via SQL to control ordering
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, ?)`).run("p3-old", "P3 Old", "P3", "2025-01-01T00:00:00Z");
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, ?)`).run("p1-item", "P1 Item", "P1", "2025-01-02T00:00:00Z");
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, ?)`).run("p2-item", "P2 Item", "P2", "2025-01-02T00:00:00Z");
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, ?)`).run("p3-new", "P3 New", "P3", "2025-01-03T00:00:00Z");
+
+    const items = listWorkItems(db);
+    expect(items.map(i => i.item_id)).toEqual(["p1-item", "p2-item", "p3-new", "p3-old"]);
+  });
+
+  test("--all returns all statuses", async () => {
+    const { createWorkItem, claimWorkItem, listWorkItems } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "all-1", title: "Available" });
+    createWorkItem(db, { id: "all-2", title: "Claimed" });
+    const agent = registerAgent(db, { name: "Agent" });
+    claimWorkItem(db, "all-2", agent.session_id);
+
+    const items = listWorkItems(db, { all: true });
+    expect(items.length).toBe(2);
+  });
+
+  test("filters by status (comma-separated)", async () => {
+    const { createWorkItem, claimWorkItem, listWorkItems } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "sf-1", title: "Available" });
+    createWorkItem(db, { id: "sf-2", title: "Claimed" });
+    const agent = registerAgent(db, { name: "Agent" });
+    claimWorkItem(db, "sf-2", agent.session_id);
+
+    const items = listWorkItems(db, { status: "claimed" });
+    expect(items.length).toBe(1);
+    expect(items[0].item_id).toBe("sf-2");
+
+    const multi = listWorkItems(db, { status: "available,claimed" });
+    expect(multi.length).toBe(2);
+  });
+
+  test("filters by priority (comma-separated)", async () => {
+    const { createWorkItem, listWorkItems } = await import("../src/work");
+
+    createWorkItem(db, { id: "pf-1", title: "P1", priority: "P1" });
+    createWorkItem(db, { id: "pf-2", title: "P2", priority: "P2" });
+    createWorkItem(db, { id: "pf-3", title: "P3", priority: "P3" });
+
+    const items = listWorkItems(db, { all: true, priority: "P1,P3" });
+    expect(items.length).toBe(2);
+    expect(items.map(i => i.item_id)).toEqual(["pf-1", "pf-3"]);
+  });
+
+  test("filters by project", async () => {
+    const { createWorkItem, listWorkItems } = await import("../src/work");
+    const { registerProject } = await import("../src/project");
+
+    registerProject(db, { id: "my-proj", name: "My Project" });
+    createWorkItem(db, { id: "proj-1", title: "In project", project: "my-proj" });
+    createWorkItem(db, { id: "proj-2", title: "No project" });
+
+    const items = listWorkItems(db, { all: true, project: "my-proj" });
+    expect(items.length).toBe(1);
+    expect(items[0].item_id).toBe("proj-1");
+  });
+
+  test("returns empty array for no matches", async () => {
+    const { listWorkItems } = await import("../src/work");
+    const items = listWorkItems(db);
+    expect(items).toEqual([]);
+  });
+
+  test("non-existent project returns empty array", async () => {
+    const { listWorkItems } = await import("../src/work");
+    const items = listWorkItems(db, { project: "no-such-project" });
+    expect(items).toEqual([]);
+  });
+
+  test("throws on invalid status filter", async () => {
+    const { listWorkItems } = await import("../src/work");
+    expect(() => listWorkItems(db, { status: "bogus" })).toThrow("bogus");
+  });
+
+  test("throws on invalid priority filter", async () => {
+    const { listWorkItems } = await import("../src/work");
+    expect(() => listWorkItems(db, { priority: "P9" })).toThrow("P9");
+  });
+});
+
+// F-10 T-2.1: getWorkItemStatus
+describe("getWorkItemStatus", () => {
+  test("returns item detail with event history", async () => {
+    const { createWorkItem, claimWorkItem, getWorkItemStatus } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "detail-1", title: "Detail item", priority: "P1" });
+    const agent = registerAgent(db, { name: "Claimer" });
+    claimWorkItem(db, "detail-1", agent.session_id);
+
+    const detail = getWorkItemStatus(db, "detail-1");
+    expect(detail.item.item_id).toBe("detail-1");
+    expect(detail.item.title).toBe("Detail item");
+    expect(detail.item.status).toBe("claimed");
+    expect(detail.item.priority).toBe("P1");
+
+    expect(detail.history.length).toBeGreaterThanOrEqual(2);
+    expect(detail.history[0].event_type).toBe("work_created");
+    expect(detail.history[1].event_type).toBe("work_claimed");
+  });
+
+  test("returns empty history for unclaimed item", async () => {
+    const { createWorkItem, getWorkItemStatus } = await import("../src/work");
+
+    createWorkItem(db, { id: "no-hist", title: "No claim" });
+    const detail = getWorkItemStatus(db, "no-hist");
+
+    expect(detail.item.item_id).toBe("no-hist");
+    expect(detail.history.length).toBe(1); // only work_created
+    expect(detail.history[0].event_type).toBe("work_created");
+  });
+
+  test("throws on non-existent item", async () => {
+    const { getWorkItemStatus } = await import("../src/work");
+    expect(() => getWorkItemStatus(db, "ghost")).toThrow("ghost");
+  });
+});
+
+// F-8 T-4.1: CLI E2E (claim)
 describe("CLI work claim", () => {
   test("create-and-claim outputs JSON", async () => {
     // Register agent first
@@ -276,5 +422,92 @@ describe("CLI work claim", () => {
     expect(json.item_id).toBe("no-claim");
     expect(json.status).toBe("available");
     expect(json.claimed_by).toBeNull();
+  });
+});
+
+// F-10 T-3.1: CLI E2E (list + status)
+describe("CLI work list", () => {
+  test("list outputs JSON array", async () => {
+    // Create two items
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "list-1", "--title", "First"],
+      { cwd: "/Users/fischer/work/ivy-blackboard" }
+    );
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "list-2", "--title", "Second", "--priority", "P1"],
+      { cwd: "/Users/fischer/work/ivy-blackboard" }
+    );
+
+    const proc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "list"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(true);
+    expect(json.count).toBe(2);
+    expect(json.items[0].item_id).toBe("list-2"); // P1 first
+  });
+
+  test("list with --status filter", async () => {
+    // Create and claim one
+    const regProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "ListAgent"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const regText = await new Response(regProc.stdout).text();
+    await regProc.exited;
+    const sid = JSON.parse(regText).session_id;
+
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "ls-1", "--title", "Available"],
+      { cwd: "/Users/fischer/work/ivy-blackboard" }
+    );
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "ls-2", "--title", "Claimed", "--session", sid],
+      { cwd: "/Users/fischer/work/ivy-blackboard" }
+    );
+
+    const proc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "list", "--status", "claimed"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(true);
+    expect(json.count).toBe(1);
+    expect(json.items[0].item_id).toBe("ls-2");
+  });
+});
+
+describe("CLI work status", () => {
+  test("status outputs JSON detail", async () => {
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "stat-1", "--title", "Status Test"],
+      { cwd: "/Users/fischer/work/ivy-blackboard" }
+    );
+
+    const proc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "status", "stat-1"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(true);
+    expect(json.item_id).toBe("stat-1");
+    expect(json.title).toBe("Status Test");
+    expect(json.history).toBeArray();
+    expect(json.history.length).toBeGreaterThanOrEqual(1);
   });
 });

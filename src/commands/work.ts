@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import type { CommandContext } from "../context";
-import { createWorkItem, claimWorkItem, createAndClaimWorkItem } from "../work";
-import { formatJson } from "../output";
+import { createWorkItem, claimWorkItem, createAndClaimWorkItem, listWorkItems, getWorkItemStatus } from "../work";
+import { formatJson, formatTable, formatRelativeTime } from "../output";
 import { withErrorHandling } from "../errors";
 
 export function registerWorkCommands(
@@ -112,27 +112,70 @@ export function registerWorkCommands(
   work
     .command("list")
     .description("List work items")
+    .option("--all", "Show all statuses (default: available only)")
     .option("--project <project>", "Filter by project")
-    .option("--status <status>", "Filter by status")
-    .action(async () => {
-      const ctx = getContext();
-      if (ctx.options.json) {
-        console.log(JSON.stringify({ ok: true, count: 0, items: [], timestamp: new Date().toISOString() }, null, 2));
-      } else {
-        console.log("No work items.");
-      }
-    });
+    .option("--status <status>", "Filter by status (comma-separated)")
+    .option("--priority <priority>", "Filter by priority (comma-separated)")
+    .action(
+      withErrorHandling((opts) => {
+        const ctx = getContext();
+        const items = listWorkItems(ctx.db, {
+          all: opts.all,
+          status: opts.status,
+          priority: opts.priority,
+          project: opts.project,
+        });
+
+        if (ctx.options.json) {
+          console.log(formatJson(items));
+        } else if (items.length === 0) {
+          console.log("No work items.");
+        } else {
+          const headers = ["ID", "TITLE", "PROJECT", "STATUS", "PRIORITY", "CLAIMED BY", "CREATED"];
+          const rows = items.map(i => [
+            i.item_id.slice(0, 12),
+            i.title,
+            i.project_id ?? "-",
+            i.status,
+            i.priority,
+            i.claimed_by ? i.claimed_by.slice(0, 12) : "-",
+            formatRelativeTime(i.created_at),
+          ]);
+          console.log(formatTable(headers, rows));
+        }
+      }, () => getContext().options.json)
+    );
 
   work
     .command("status")
     .description("Show detailed work item status")
     .argument("<id>", "Work item ID")
-    .action(async () => {
-      const ctx = getContext();
-      if (ctx.options.json) {
-        console.log(JSON.stringify({ ok: false, error: "Not yet implemented", timestamp: new Date().toISOString() }, null, 2));
-      } else {
-        console.log("Not yet implemented");
-      }
-    });
+    .action(
+      withErrorHandling((id) => {
+        const ctx = getContext();
+        const detail = getWorkItemStatus(ctx.db, id);
+
+        if (ctx.options.json) {
+          console.log(formatJson({ ...detail.item, history: detail.history }));
+        } else {
+          const i = detail.item;
+          console.log(`Item:     ${i.item_id}`);
+          console.log(`Title:    ${i.title}`);
+          console.log(`Status:   ${i.status}`);
+          console.log(`Priority: ${i.priority}`);
+          console.log(`Source:   ${i.source}`);
+          if (i.project_id) console.log(`Project:  ${i.project_id}`);
+          if (i.description) console.log(`Desc:     ${i.description}`);
+          if (i.claimed_by) console.log(`Claimed:  ${i.claimed_by} at ${i.claimed_at}`);
+          if (i.source_ref) console.log(`Ref:      ${i.source_ref}`);
+          console.log(`Created:  ${i.created_at}`);
+          if (detail.history.length > 0) {
+            console.log(`\nTimeline:`);
+            for (const e of detail.history) {
+              console.log(`  ${e.timestamp}  ${e.event_type}  ${e.summary}`);
+            }
+          }
+        }
+      }, () => getContext().options.json)
+    );
 }
