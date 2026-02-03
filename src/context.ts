@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { resolveDbPath, openDatabase, closeDatabase } from "./db";
+import { sweepStaleAgents } from "./sweep";
 
 export interface GlobalOptions {
   json: boolean;
@@ -13,6 +14,23 @@ export interface CommandContext {
 }
 
 let cachedContext: CommandContext | null = null;
+let autoSweepDisabled = false;
+
+/**
+ * Disable auto-sweep for the current process.
+ * Used by the sweep command which handles its own sweep.
+ */
+export function disableAutoSweep(): void {
+  autoSweepDisabled = true;
+}
+
+/**
+ * Reset context state. Used for test isolation.
+ */
+export function resetContextState(): void {
+  cachedContext = null;
+  autoSweepDisabled = false;
+}
 
 /**
  * Create (or return cached) command context.
@@ -23,6 +41,15 @@ export function createContext(options: GlobalOptions): CommandContext {
 
   const dbPath = resolveDbPath({ dbPath: options.db });
   const db = openDatabase(dbPath);
+
+  // Auto-sweep stale agents (silent, fail-open)
+  if (!autoSweepDisabled) {
+    try {
+      sweepStaleAgents(db);
+    } catch {
+      // Sweep failure must not prevent command execution
+    }
+  }
 
   cachedContext = { db, dbPath, options };
 
