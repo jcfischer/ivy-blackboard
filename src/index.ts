@@ -7,6 +7,7 @@ import { registerProjectCommands } from "./commands/project";
 import { registerWorkCommands } from "./commands/work";
 import { registerObserveCommand } from "./commands/observe";
 import { registerServeCommand } from "./commands/serve";
+import { registerExportCommand } from "./commands/export";
 import { registerSweepCommand } from "./commands/sweep";
 import { registerStatusCommand } from "./commands/status";
 
@@ -33,6 +34,7 @@ registerProjectCommands(program, getContext);
 registerWorkCommands(program, getContext);
 registerObserveCommand(program, getContext);
 registerServeCommand(program, getContext);
+registerExportCommand(program, getContext);
 registerSweepCommand(program, getContext);
 registerStatusCommand(program, getContext);
 
