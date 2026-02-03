@@ -488,6 +488,336 @@ describe("CLI work list", () => {
   });
 });
 
+// F-9 T-1.1: releaseWorkItem
+describe("releaseWorkItem", () => {
+  test("releases a claimed item back to available", async () => {
+    const { createWorkItem, claimWorkItem, releaseWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "rel-1", title: "Releasable" });
+    const agent = registerAgent(db, { name: "Releaser" });
+    claimWorkItem(db, "rel-1", agent.session_id);
+
+    const result = releaseWorkItem(db, "rel-1", agent.session_id);
+    expect(result.item_id).toBe("rel-1");
+    expect(result.released).toBe(true);
+    expect(result.previous_status).toBe("claimed");
+
+    const row = db.query("SELECT status, claimed_by, claimed_at FROM work_items WHERE item_id = ?").get("rel-1") as any;
+    expect(row.status).toBe("available");
+    expect(row.claimed_by).toBeNull();
+    expect(row.claimed_at).toBeNull();
+  });
+
+  test("emits work_released event", async () => {
+    const { createWorkItem, claimWorkItem, releaseWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "rel-evt", title: "Release event" });
+    const agent = registerAgent(db, { name: "Releaser" });
+    claimWorkItem(db, "rel-evt", agent.session_id);
+    releaseWorkItem(db, "rel-evt", agent.session_id);
+
+    const event = db.query(
+      "SELECT * FROM events WHERE event_type = 'work_released' AND target_id = ?"
+    ).get("rel-evt") as any;
+    expect(event).not.toBeNull();
+    expect(event.actor_id).toBe(agent.session_id);
+  });
+
+  test("throws on non-existent item", async () => {
+    const { releaseWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Releaser" });
+    expect(() => releaseWorkItem(db, "ghost", agent.session_id)).toThrow("ghost");
+  });
+
+  test("throws on non-existent session", async () => {
+    const { createWorkItem, claimWorkItem, releaseWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+    createWorkItem(db, { id: "rel-bad-sess", title: "Bad session" });
+    const agent = registerAgent(db, { name: "Claimer" });
+    claimWorkItem(db, "rel-bad-sess", agent.session_id);
+    expect(() => releaseWorkItem(db, "rel-bad-sess", "fake-session")).toThrow("fake-session");
+  });
+
+  test("throws when item not claimed", async () => {
+    const { createWorkItem, releaseWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+    createWorkItem(db, { id: "rel-avail", title: "Available" });
+    const agent = registerAgent(db, { name: "Releaser" });
+    expect(() => releaseWorkItem(db, "rel-avail", agent.session_id)).toThrow();
+  });
+
+  test("throws when claimed by different session", async () => {
+    const { createWorkItem, claimWorkItem, releaseWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+    createWorkItem(db, { id: "rel-other", title: "Other agent" });
+    const a1 = registerAgent(db, { name: "A1" });
+    const a2 = registerAgent(db, { name: "A2" });
+    claimWorkItem(db, "rel-other", a1.session_id);
+    expect(() => releaseWorkItem(db, "rel-other", a2.session_id)).toThrow();
+  });
+});
+
+// F-9 T-1.2: completeWorkItem
+describe("completeWorkItem", () => {
+  test("marks a claimed item as completed", async () => {
+    const { createWorkItem, claimWorkItem, completeWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "comp-1", title: "Completable" });
+    const agent = registerAgent(db, { name: "Completer" });
+    claimWorkItem(db, "comp-1", agent.session_id);
+
+    const result = completeWorkItem(db, "comp-1", agent.session_id);
+    expect(result.item_id).toBe("comp-1");
+    expect(result.completed).toBe(true);
+    expect(result.completed_at).toBeTruthy();
+    expect(result.claimed_by).toBe(agent.session_id);
+
+    const row = db.query("SELECT status, claimed_by, completed_at FROM work_items WHERE item_id = ?").get("comp-1") as any;
+    expect(row.status).toBe("completed");
+    expect(row.claimed_by).toBe(agent.session_id); // retained for history
+    expect(row.completed_at).toBeTruthy();
+  });
+
+  test("emits work_completed event", async () => {
+    const { createWorkItem, claimWorkItem, completeWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "comp-evt", title: "Complete event" });
+    const agent = registerAgent(db, { name: "Completer" });
+    claimWorkItem(db, "comp-evt", agent.session_id);
+    completeWorkItem(db, "comp-evt", agent.session_id);
+
+    const event = db.query(
+      "SELECT * FROM events WHERE event_type = 'work_completed' AND target_id = ?"
+    ).get("comp-evt") as any;
+    expect(event).not.toBeNull();
+    expect(event.actor_id).toBe(agent.session_id);
+  });
+
+  test("throws on already completed item", async () => {
+    const { createWorkItem, claimWorkItem, completeWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "comp-dup", title: "Already done" });
+    const agent = registerAgent(db, { name: "Completer" });
+    claimWorkItem(db, "comp-dup", agent.session_id);
+    completeWorkItem(db, "comp-dup", agent.session_id);
+    expect(() => completeWorkItem(db, "comp-dup", agent.session_id)).toThrow();
+  });
+
+  test("throws when claimed by different session", async () => {
+    const { createWorkItem, claimWorkItem, completeWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+    createWorkItem(db, { id: "comp-other", title: "Other agent" });
+    const a1 = registerAgent(db, { name: "A1" });
+    const a2 = registerAgent(db, { name: "A2" });
+    claimWorkItem(db, "comp-other", a1.session_id);
+    expect(() => completeWorkItem(db, "comp-other", a2.session_id)).toThrow();
+  });
+});
+
+// F-9 T-2.1: blockWorkItem and unblockWorkItem
+describe("blockWorkItem", () => {
+  test("blocks an available item", async () => {
+    const { createWorkItem, blockWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "blk-1", title: "Blockable" });
+    const result = blockWorkItem(db, "blk-1", { blockedBy: "other-task" });
+
+    expect(result.item_id).toBe("blk-1");
+    expect(result.blocked).toBe(true);
+    expect(result.blocked_by).toBe("other-task");
+    expect(result.previous_status).toBe("available");
+
+    const row = db.query("SELECT status, blocked_by FROM work_items WHERE item_id = ?").get("blk-1") as any;
+    expect(row.status).toBe("blocked");
+    expect(row.blocked_by).toBe("other-task");
+  });
+
+  test("blocks a claimed item retaining claimed_by", async () => {
+    const { createWorkItem, claimWorkItem, blockWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "blk-claimed", title: "Claimed block" });
+    const agent = registerAgent(db, { name: "Blocker" });
+    claimWorkItem(db, "blk-claimed", agent.session_id);
+    const result = blockWorkItem(db, "blk-claimed");
+
+    expect(result.blocked).toBe(true);
+    expect(result.previous_status).toBe("claimed");
+
+    const row = db.query("SELECT status, claimed_by FROM work_items WHERE item_id = ?").get("blk-claimed") as any;
+    expect(row.status).toBe("blocked");
+    expect(row.claimed_by).toBe(agent.session_id); // retained
+  });
+
+  test("emits work_blocked event", async () => {
+    const { createWorkItem, blockWorkItem } = await import("../src/work");
+    createWorkItem(db, { id: "blk-evt", title: "Block event" });
+    blockWorkItem(db, "blk-evt");
+
+    const event = db.query(
+      "SELECT * FROM events WHERE event_type = 'work_blocked' AND target_id = ?"
+    ).get("blk-evt") as any;
+    expect(event).not.toBeNull();
+  });
+
+  test("throws on completed item", async () => {
+    const { createWorkItem, claimWorkItem, completeWorkItem, blockWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "blk-done", title: "Done" });
+    const agent = registerAgent(db, { name: "Agent" });
+    claimWorkItem(db, "blk-done", agent.session_id);
+    completeWorkItem(db, "blk-done", agent.session_id);
+    expect(() => blockWorkItem(db, "blk-done")).toThrow();
+  });
+});
+
+describe("unblockWorkItem", () => {
+  test("unblocks to available when no claimed_by", async () => {
+    const { createWorkItem, blockWorkItem, unblockWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "unblk-1", title: "Unblockable" });
+    blockWorkItem(db, "unblk-1", { blockedBy: "dep" });
+    const result = unblockWorkItem(db, "unblk-1");
+
+    expect(result.item_id).toBe("unblk-1");
+    expect(result.unblocked).toBe(true);
+    expect(result.restored_status).toBe("available");
+
+    const row = db.query("SELECT status, blocked_by FROM work_items WHERE item_id = ?").get("unblk-1") as any;
+    expect(row.status).toBe("available");
+    expect(row.blocked_by).toBeNull();
+  });
+
+  test("unblocks to claimed when claimed_by is set", async () => {
+    const { createWorkItem, claimWorkItem, blockWorkItem, unblockWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "unblk-claimed", title: "Claimed unblock" });
+    const agent = registerAgent(db, { name: "Agent" });
+    claimWorkItem(db, "unblk-claimed", agent.session_id);
+    blockWorkItem(db, "unblk-claimed");
+    const result = unblockWorkItem(db, "unblk-claimed");
+
+    expect(result.restored_status).toBe("claimed");
+
+    const row = db.query("SELECT status, claimed_by FROM work_items WHERE item_id = ?").get("unblk-claimed") as any;
+    expect(row.status).toBe("claimed");
+    expect(row.claimed_by).toBe(agent.session_id);
+  });
+
+  test("throws when item is not blocked", async () => {
+    const { createWorkItem, unblockWorkItem } = await import("../src/work");
+    createWorkItem(db, { id: "unblk-avail", title: "Not blocked" });
+    expect(() => unblockWorkItem(db, "unblk-avail")).toThrow();
+  });
+});
+
+// F-9 T-3.1/T-3.2: CLI E2E
+describe("CLI work release", () => {
+  test("release outputs JSON", async () => {
+    const regProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "CLIReleaser"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const regText = await new Response(regProc.stdout).text();
+    await regProc.exited;
+    const sid = JSON.parse(regText).session_id;
+
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "cli-rel", "--title", "CLI Release", "--session", sid],
+      { cwd: "/Users/fischer/work/ivy-blackboard" }
+    );
+
+    const proc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "release",
+       "--id", "cli-rel", "--session", sid],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(true);
+    expect(json.item_id).toBe("cli-rel");
+    expect(json.released).toBe(true);
+  });
+});
+
+describe("CLI work complete", () => {
+  test("complete outputs JSON", async () => {
+    const regProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "CLICompleter"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const regText = await new Response(regProc.stdout).text();
+    await regProc.exited;
+    const sid = JSON.parse(regText).session_id;
+
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "cli-comp", "--title", "CLI Complete", "--session", sid],
+      { cwd: "/Users/fischer/work/ivy-blackboard" }
+    );
+
+    const proc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "complete",
+       "--id", "cli-comp", "--session", sid],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(true);
+    expect(json.item_id).toBe("cli-comp");
+    expect(json.completed).toBe(true);
+  });
+});
+
+describe("CLI work block/unblock", () => {
+  test("block and unblock output JSON", async () => {
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "cli-blk", "--title", "CLI Block"],
+      { cwd: "/Users/fischer/work/ivy-blackboard" }
+    );
+
+    const blockProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "block",
+       "--id", "cli-blk", "--blocked-by", "other-item"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const blockText = await new Response(blockProc.stdout).text();
+    await blockProc.exited;
+
+    const blockJson = JSON.parse(blockText);
+    expect(blockJson.ok).toBe(true);
+    expect(blockJson.item_id).toBe("cli-blk");
+    expect(blockJson.blocked).toBe(true);
+
+    const unblockProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "unblock",
+       "--id", "cli-blk"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const unblockText = await new Response(unblockProc.stdout).text();
+    await unblockProc.exited;
+
+    const unblockJson = JSON.parse(unblockText);
+    expect(unblockJson.ok).toBe(true);
+    expect(unblockJson.item_id).toBe("cli-blk");
+    expect(unblockJson.unblocked).toBe(true);
+  });
+});
+
 describe("CLI work status", () => {
   test("status outputs JSON detail", async () => {
     Bun.spawnSync(

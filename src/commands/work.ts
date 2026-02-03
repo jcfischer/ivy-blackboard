@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { CommandContext } from "../context";
-import { createWorkItem, claimWorkItem, createAndClaimWorkItem, listWorkItems, getWorkItemStatus } from "../work";
+import { createWorkItem, claimWorkItem, createAndClaimWorkItem, releaseWorkItem, completeWorkItem, blockWorkItem, unblockWorkItem, listWorkItems, getWorkItemStatus } from "../work";
 import { formatJson, formatTable, formatRelativeTime } from "../output";
 import { withErrorHandling } from "../errors";
 
@@ -86,28 +86,76 @@ export function registerWorkCommands(
     .description("Release a claimed work item")
     .requiredOption("--id <id>", "Work item ID")
     .requiredOption("--session <session>", "Session ID")
-    .action(async () => {
-      const ctx = getContext();
-      if (ctx.options.json) {
-        console.log(JSON.stringify({ ok: false, error: "Not yet implemented", timestamp: new Date().toISOString() }, null, 2));
-      } else {
-        console.log("Not yet implemented");
-      }
-    });
+    .action(
+      withErrorHandling((opts) => {
+        const ctx = getContext();
+        const result = releaseWorkItem(ctx.db, opts.id, opts.session);
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Released work item: ${result.item_id}`);
+          console.log(`Status: available`);
+        }
+      }, () => getContext().options.json)
+    );
 
   work
     .command("complete")
     .description("Mark a work item as completed")
     .requiredOption("--id <id>", "Work item ID")
     .requiredOption("--session <session>", "Session ID")
-    .action(async () => {
-      const ctx = getContext();
-      if (ctx.options.json) {
-        console.log(JSON.stringify({ ok: false, error: "Not yet implemented", timestamp: new Date().toISOString() }, null, 2));
-      } else {
-        console.log("Not yet implemented");
-      }
-    });
+    .action(
+      withErrorHandling((opts) => {
+        const ctx = getContext();
+        const result = completeWorkItem(ctx.db, opts.id, opts.session);
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Completed work item: ${result.item_id}`);
+          console.log(`Completed at: ${result.completed_at}`);
+        }
+      }, () => getContext().options.json)
+    );
+
+  work
+    .command("block")
+    .description("Block a work item")
+    .requiredOption("--id <id>", "Work item ID")
+    .option("--blocked-by <item-id>", "Blocking work item ID")
+    .action(
+      withErrorHandling((opts) => {
+        const ctx = getContext();
+        const result = blockWorkItem(ctx.db, opts.id, { blockedBy: opts.blockedBy });
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Blocked work item: ${result.item_id}`);
+          if (result.blocked_by) console.log(`Blocked by: ${result.blocked_by}`);
+          console.log(`Previous status: ${result.previous_status}`);
+        }
+      }, () => getContext().options.json)
+    );
+
+  work
+    .command("unblock")
+    .description("Unblock a blocked work item")
+    .requiredOption("--id <id>", "Work item ID")
+    .action(
+      withErrorHandling((opts) => {
+        const ctx = getContext();
+        const result = unblockWorkItem(ctx.db, opts.id);
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Unblocked work item: ${result.item_id}`);
+          console.log(`Restored status: ${result.restored_status}`);
+        }
+      }, () => getContext().options.json)
+    );
 
   work
     .command("list")
