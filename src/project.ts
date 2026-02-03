@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
+import { sanitizeText } from "./sanitize";
 
 export interface RegisterProjectOptions {
   id: string;
@@ -36,6 +37,7 @@ export function registerProject(
   opts: RegisterProjectOptions
 ): RegisterProjectResult {
   const now = new Date().toISOString();
+  const displayName = sanitizeText(opts.name);
   const localPath = opts.path ?? null;
   const remoteRepo = opts.repo ?? null;
   let metadata: string | null = null;
@@ -57,9 +59,9 @@ export function registerProject(
       db.query(`
         INSERT INTO projects (project_id, display_name, local_path, remote_repo, registered_at, metadata)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).run(opts.id, opts.name, localPath, remoteRepo, now, metadata);
+      `).run(opts.id, displayName, localPath, remoteRepo, now, metadata);
 
-      const summary = `Project "${opts.name}" registered as "${opts.id}"`;
+      const summary = `Project "${displayName}" registered as "${opts.id}"`;
       db.query(`
         INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
         VALUES (?, 'project_registered', NULL, ?, 'project', ?)
@@ -78,7 +80,7 @@ export function registerProject(
 
   return {
     project_id: opts.id,
-    display_name: opts.name,
+    display_name: displayName,
     local_path: localPath,
     remote_repo: remoteRepo,
     registered_at: now,

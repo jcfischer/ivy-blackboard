@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
+import { sanitizeText } from "./sanitize";
 import { AGENT_STATUSES, type BlackboardAgent } from "./types";
 
 export interface RegisterAgentOptions {
@@ -53,17 +54,18 @@ export function registerAgent(
   const pid = process.pid;
   const parentId = opts.parentId ?? null;
   const project = opts.project ?? null;
-  const work = opts.work ?? null;
+  const work = opts.work ? sanitizeText(opts.work) : null;
+  const agentName = sanitizeText(opts.name);
 
   const isDelegate = parentId !== null;
   const designation = isDelegate ? "Delegate agent" : "Agent";
-  const summary = `${designation} "${opts.name}" registered on project "${project ?? "none"}"`;
+  const summary = `${designation} "${agentName}" registered on project "${project ?? "none"}"`;
 
   db.transaction(() => {
     db.query(`
       INSERT INTO agents (session_id, agent_name, pid, parent_id, project, current_work, status, started_at, last_seen_at)
       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
-    `).run(sessionId, opts.name, pid, parentId, project, work, now, now);
+    `).run(sessionId, agentName, pid, parentId, project, work, now, now);
 
     db.query(`
       INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
@@ -73,7 +75,7 @@ export function registerAgent(
 
   return {
     session_id: sessionId,
-    agent_name: opts.name,
+    agent_name: agentName,
     pid,
     parent_id: parentId,
     project,
@@ -161,7 +163,7 @@ export function sendHeartbeat(
   }
 
   const now = new Date().toISOString();
-  const progress = opts.progress ?? null;
+  const progress = opts.progress ? sanitizeText(opts.progress) : null;
   const workItemId = opts.workItemId ?? null;
 
   db.transaction(() => {

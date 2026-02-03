@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
+import { sanitizeText } from "./sanitize";
 import { WORK_ITEM_SOURCES, WORK_ITEM_PRIORITIES, WORK_ITEM_STATUSES } from "./types";
 import type { BlackboardWorkItem, BlackboardEvent } from "./types";
 
@@ -39,9 +40,10 @@ export function createWorkItem(
   opts: CreateWorkItemOptions
 ): CreateWorkItemResult {
   const now = new Date().toISOString();
+  const title = sanitizeText(opts.title);
   const source = opts.source ?? "local";
   const priority = opts.priority ?? "P2";
-  const description = opts.description ?? null;
+  const description = opts.description ? sanitizeText(opts.description) : null;
   const project = opts.project ?? null;
   const sourceRef = opts.sourceRef ?? null;
   let metadata: string | null = null;
@@ -77,9 +79,9 @@ export function createWorkItem(
       db.query(`
         INSERT INTO work_items (item_id, project_id, title, description, source, source_ref, status, priority, created_at, metadata)
         VALUES (?, ?, ?, ?, ?, ?, 'available', ?, ?, ?)
-      `).run(opts.id, project, opts.title, description, source, sourceRef, priority, now, metadata);
+      `).run(opts.id, project, title, description, source, sourceRef, priority, now, metadata);
 
-      const summary = `Work item "${opts.title}" created as ${opts.id}`;
+      const summary = `Work item "${title}" created as ${opts.id}`;
       db.query(`
         INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
         VALUES (?, 'work_created', NULL, ?, 'work_item', ?)
@@ -98,7 +100,7 @@ export function createWorkItem(
 
   return {
     item_id: opts.id,
-    title: opts.title,
+    title,
     status: "available",
     claimed_by: null,
     claimed_at: null,
@@ -179,9 +181,10 @@ export function createAndClaimWorkItem(
   sessionId: string
 ): CreateWorkItemResult {
   const now = new Date().toISOString();
+  const title = sanitizeText(opts.title);
   const source = opts.source ?? "local";
   const priority = opts.priority ?? "P2";
-  const description = opts.description ?? null;
+  const description = opts.description ? sanitizeText(opts.description) : null;
   const project = opts.project ?? null;
   const sourceRef = opts.sourceRef ?? null;
   let metadata: string | null = null;
@@ -228,15 +231,15 @@ export function createAndClaimWorkItem(
     db.query(`
       INSERT INTO work_items (item_id, project_id, title, description, source, source_ref, status, priority, claimed_by, claimed_at, created_at, metadata)
       VALUES (?, ?, ?, ?, ?, ?, 'claimed', ?, ?, ?, ?, ?)
-    `).run(opts.id, project, opts.title, description, source, sourceRef, priority, sessionId, now, now, metadata);
+    `).run(opts.id, project, title, description, source, sourceRef, priority, sessionId, now, now, metadata);
 
-    const createSummary = `Work item "${opts.title}" created as ${opts.id}`;
+    const createSummary = `Work item "${title}" created as ${opts.id}`;
     db.query(`
       INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
       VALUES (?, 'work_created', ?, ?, 'work_item', ?)
     `).run(now, sessionId, opts.id, createSummary);
 
-    const claimSummary = `Work item "${opts.title}" claimed by agent ${sessionId.slice(0, 12)}`;
+    const claimSummary = `Work item "${title}" claimed by agent ${sessionId.slice(0, 12)}`;
     db.query(`
       INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
       VALUES (?, 'work_claimed', ?, ?, 'work_item', ?)
@@ -245,7 +248,7 @@ export function createAndClaimWorkItem(
 
   return {
     item_id: opts.id,
-    title: opts.title,
+    title,
     status: "claimed",
     claimed_by: sessionId,
     claimed_at: now,
