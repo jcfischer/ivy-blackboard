@@ -142,6 +142,90 @@ describe("listProjects", () => {
   });
 });
 
+// T-F11-1.1: getProjectStatus
+describe("getProjectStatus", () => {
+  test("returns project, agents, and work items", async () => {
+    const { registerProject, getProjectStatus } = await import("../src/project");
+    const { registerAgent } = await import("../src/agent");
+    const { createWorkItem } = await import("../src/work");
+
+    registerProject(db, { id: "status-proj", name: "Status Project", path: "/tmp/sp" });
+    registerAgent(db, { name: "Worker1", project: "status-proj" });
+    registerAgent(db, { name: "Worker2", project: "status-proj" });
+    createWorkItem(db, { id: "wi-1", title: "Task A", project: "status-proj" });
+    createWorkItem(db, { id: "wi-2", title: "Task B", project: "status-proj", priority: "P1" });
+
+    const result = getProjectStatus(db, "status-proj");
+    expect(result.project.project_id).toBe("status-proj");
+    expect(result.project.display_name).toBe("Status Project");
+    expect(result.project.local_path).toBe("/tmp/sp");
+    expect(result.agents.length).toBe(2);
+    expect(result.work_items.length).toBe(2);
+  });
+
+  test("throws PROJECT_NOT_FOUND for missing project", async () => {
+    const { getProjectStatus } = await import("../src/project");
+    expect(() => getProjectStatus(db, "nonexistent")).toThrow("nonexistent");
+  });
+
+  test("returns empty agents array when project has no agents", async () => {
+    const { registerProject, getProjectStatus } = await import("../src/project");
+    registerProject(db, { id: "no-agents", name: "No Agents" });
+
+    const result = getProjectStatus(db, "no-agents");
+    expect(result.agents).toEqual([]);
+    expect(result.project.project_id).toBe("no-agents");
+  });
+
+  test("returns empty work_items array when project has no work", async () => {
+    const { registerProject, getProjectStatus } = await import("../src/project");
+    registerProject(db, { id: "no-work", name: "No Work" });
+
+    const result = getProjectStatus(db, "no-work");
+    expect(result.work_items).toEqual([]);
+  });
+
+  test("excludes completed/stale agents from active agents list", async () => {
+    const { registerProject, getProjectStatus } = await import("../src/project");
+    const { registerAgent, deregisterAgent } = await import("../src/agent");
+
+    registerProject(db, { id: "mixed-agents", name: "Mixed" });
+    registerAgent(db, { name: "Active", project: "mixed-agents" });
+    const completed = registerAgent(db, { name: "Done", project: "mixed-agents" });
+    deregisterAgent(db, completed.session_id);
+
+    const result = getProjectStatus(db, "mixed-agents");
+    expect(result.agents.length).toBe(1);
+    expect(result.agents[0].agent_name).toBe("Active");
+  });
+
+  test("includes all work item statuses", async () => {
+    const { registerProject, getProjectStatus } = await import("../src/project");
+    const { registerAgent } = await import("../src/agent");
+    const { createWorkItem, claimWorkItem, completeWorkItem, blockWorkItem } = await import("../src/work");
+
+    registerProject(db, { id: "all-statuses", name: "All Statuses" });
+    const agent = registerAgent(db, { name: "Worker", project: "all-statuses" });
+
+    createWorkItem(db, { id: "avail", title: "Available", project: "all-statuses" });
+    createWorkItem(db, { id: "claimed", title: "Claimed", project: "all-statuses" });
+    claimWorkItem(db, "claimed", agent.session_id);
+    createWorkItem(db, { id: "done", title: "Done", project: "all-statuses" });
+    claimWorkItem(db, "done", agent.session_id);
+    completeWorkItem(db, "done", agent.session_id);
+    createWorkItem(db, { id: "blocked", title: "Blocked", project: "all-statuses" });
+    blockWorkItem(db, "blocked", { blockedBy: "dependency" });
+
+    const result = getProjectStatus(db, "all-statuses");
+    expect(result.work_items.length).toBe(4);
+    const statuses = result.work_items.map(w => w.status);
+    expect(statuses).toContain("available");
+    expect(statuses).toContain("claimed");
+    expect(statuses).toContain("completed");
+    expect(statuses).toContain("blocked");
+  });
+});
+
 // T-3.1: CLI E2E
 describe("CLI project register", () => {
   test("register --id --name outputs project as JSON", async () => {
@@ -157,6 +241,45 @@ describe("CLI project register", () => {
     expect(json.project_id).toBe("cli-proj");
     expect(json.display_name).toBe("CLI Project");
     expect(json.local_path).toBe("/tmp/test");
+  });
+});
+
+describe("CLI project status", () => {
+  test("status --json returns project with agents and work items", async () => {
+    // Register project
+    const regProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "project", "register", "--id", "status-cli", "--name", "CLI Status"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    await new Response(regProc.stdout).text();
+    await regProc.exited;
+
+    // Get status
+    const statusProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "project", "status", "status-cli"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(statusProc.stdout).text();
+    await statusProc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(true);
+    expect(json.project.project_id).toBe("status-cli");
+    expect(Array.isArray(json.agents)).toBe(true);
+    expect(Array.isArray(json.work_items)).toBe(true);
+  });
+
+  test("status for missing project returns error", async () => {
+    const proc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "project", "status", "missing-proj"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(false);
+    expect(json.error).toContain("missing-proj");
   });
 });
 

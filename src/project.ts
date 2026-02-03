@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
 import { sanitizeText } from "./sanitize";
+import type { BlackboardAgent, BlackboardProject, BlackboardWorkItem } from "./types";
 
 export interface RegisterProjectOptions {
   id: string;
@@ -84,6 +85,50 @@ export function registerProject(
     local_path: localPath,
     remote_repo: remoteRepo,
     registered_at: now,
+  };
+}
+
+export interface ProjectStatus {
+  project: BlackboardProject;
+  agents: BlackboardAgent[];
+  work_items: BlackboardWorkItem[];
+}
+
+/**
+ * Get detailed project status with agents and work items.
+ * Throws PROJECT_NOT_FOUND if the project doesn't exist.
+ */
+export function getProjectStatus(
+  db: Database,
+  projectId: string
+): ProjectStatus {
+  const project = db
+    .query("SELECT * FROM projects WHERE project_id = ?")
+    .get(projectId) as BlackboardProject | null;
+
+  if (!project) {
+    throw new BlackboardError(
+      `Project not found: ${projectId}`,
+      "PROJECT_NOT_FOUND"
+    );
+  }
+
+  const agents = db
+    .query(
+      "SELECT * FROM agents WHERE project = ? AND status IN ('active', 'idle') ORDER BY started_at ASC"
+    )
+    .all(projectId) as BlackboardAgent[];
+
+  const workItems = db
+    .query(
+      "SELECT * FROM work_items WHERE project_id = ? ORDER BY created_at DESC"
+    )
+    .all(projectId) as BlackboardWorkItem[];
+
+  return {
+    project,
+    agents,
+    work_items: workItems,
   };
 }
 
