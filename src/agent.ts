@@ -19,6 +19,19 @@ export interface RegisterAgentResult {
   started_at: string;
 }
 
+export interface HeartbeatOptions {
+  sessionId: string;
+  progress?: string;
+  workItemId?: string;
+}
+
+export interface HeartbeatResult {
+  session_id: string;
+  agent_name: string;
+  timestamp: string;
+  progress: string | null;
+}
+
 export interface DeregisterAgentResult {
   session_id: string;
   agent_name: string;
@@ -124,5 +137,63 @@ export function deregisterAgent(
     agent_name: agent.agent_name,
     released_count: releasedCount,
     duration_seconds: durationSeconds,
+  };
+}
+
+/**
+ * Send a heartbeat for an agent session.
+ * Updates last_seen_at, inserts heartbeat row, optionally emits event.
+ */
+export function sendHeartbeat(
+  db: Database,
+  opts: HeartbeatOptions
+): HeartbeatResult {
+  const agent = db
+    .query("SELECT session_id, agent_name FROM agents WHERE session_id = ?")
+    .get(opts.sessionId) as { session_id: string; agent_name: string } | null;
+
+  if (!agent) {
+    throw new BlackboardError(
+      `Agent session not found: ${opts.sessionId}`,
+      "AGENT_NOT_FOUND"
+    );
+  }
+
+  const now = new Date().toISOString();
+  const progress = opts.progress ?? null;
+  const workItemId = opts.workItemId ?? null;
+
+  db.transaction(() => {
+    // Update agent last_seen_at
+    if (progress) {
+      db.query("UPDATE agents SET last_seen_at = ?, current_work = ? WHERE session_id = ?").run(
+        now, progress, opts.sessionId
+      );
+    } else {
+      db.query("UPDATE agents SET last_seen_at = ? WHERE session_id = ?").run(
+        now, opts.sessionId
+      );
+    }
+
+    // Insert heartbeat row
+    db.query(`
+      INSERT INTO heartbeats (session_id, timestamp, progress, work_item_id)
+      VALUES (?, ?, ?, ?)
+    `).run(opts.sessionId, now, progress, workItemId);
+
+    // Emit event only when progress is provided
+    if (progress) {
+      db.query(`
+        INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
+        VALUES (?, 'heartbeat_received', ?, ?, 'agent', ?)
+      `).run(now, opts.sessionId, opts.sessionId, `Heartbeat: ${progress}`);
+    }
+  })();
+
+  return {
+    session_id: opts.sessionId,
+    agent_name: agent.agent_name,
+    timestamp: now,
+    progress,
   };
 }

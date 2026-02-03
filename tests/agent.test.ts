@@ -198,6 +198,125 @@ describe("deregisterAgent", () => {
   });
 });
 
+// F-4 T-1.1: Core sendHeartbeat
+describe("sendHeartbeat", () => {
+  test("updates agent last_seen_at", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+    const originalLastSeen = agent.started_at;
+
+    // Small delay to ensure timestamp differs
+    await Bun.sleep(10);
+    const result = sendHeartbeat(db, { sessionId: agent.session_id });
+
+    const row = db.query("SELECT last_seen_at FROM agents WHERE session_id = ?").get(agent.session_id) as any;
+    expect(row.last_seen_at >= originalLastSeen).toBe(true);
+    expect(result.agent_name).toBe("Ivy");
+    expect(result.session_id).toBe(agent.session_id);
+  });
+
+  test("inserts heartbeat row", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+    sendHeartbeat(db, { sessionId: agent.session_id });
+
+    const row = db.query("SELECT * FROM heartbeats WHERE session_id = ?").get(agent.session_id) as any;
+    expect(row).not.toBeNull();
+    expect(row.session_id).toBe(agent.session_id);
+    expect(row.progress).toBeNull();
+  });
+
+  test("stores progress text in heartbeat and updates current_work", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+    sendHeartbeat(db, { sessionId: agent.session_id, progress: "Finished schema design" });
+
+    const hb = db.query("SELECT progress FROM heartbeats WHERE session_id = ?").get(agent.session_id) as any;
+    expect(hb.progress).toBe("Finished schema design");
+
+    const agentRow = db.query("SELECT current_work FROM agents WHERE session_id = ?").get(agent.session_id) as any;
+    expect(agentRow.current_work).toBe("Finished schema design");
+  });
+
+  test("emits heartbeat event only when progress provided", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+
+    // Heartbeat without progress — no event
+    sendHeartbeat(db, { sessionId: agent.session_id });
+    const noProgressEvents = db.query(
+      "SELECT COUNT(*) as count FROM events WHERE event_type = 'heartbeat_received' AND actor_id = ?"
+    ).get(agent.session_id) as any;
+    expect(noProgressEvents.count).toBe(0);
+
+    // Heartbeat with progress — event emitted
+    sendHeartbeat(db, { sessionId: agent.session_id, progress: "Making progress" });
+    const withProgressEvents = db.query(
+      "SELECT * FROM events WHERE event_type = 'heartbeat_received' AND actor_id = ?"
+    ).get(agent.session_id) as any;
+    expect(withProgressEvents).not.toBeNull();
+    expect(withProgressEvents.summary).toContain("Making progress");
+  });
+
+  test("throws on non-existent session", async () => {
+    const { sendHeartbeat } = await import("../src/agent");
+    expect(() => sendHeartbeat(db, { sessionId: "nonexistent" })).toThrow("nonexistent");
+  });
+
+  test("works for completed/stale agents", async () => {
+    const { registerAgent, deregisterAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+    deregisterAgent(db, agent.session_id);
+
+    // Should not throw — still updates last_seen_at
+    const result = sendHeartbeat(db, { sessionId: agent.session_id });
+    expect(result.session_id).toBe(agent.session_id);
+  });
+
+  test("stores work_item_id in heartbeat row", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+
+    // Create a work item
+    db.query(`
+      INSERT INTO work_items (item_id, title, source, status, priority, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run("work-hb-1", "Test task", "local", "claimed", "P1", new Date().toISOString());
+
+    sendHeartbeat(db, { sessionId: agent.session_id, workItemId: "work-hb-1" });
+    const hb = db.query("SELECT work_item_id FROM heartbeats WHERE session_id = ?").get(agent.session_id) as any;
+    expect(hb.work_item_id).toBe("work-hb-1");
+  });
+});
+
+// F-4 CLI heartbeat
+describe("CLI agent heartbeat", () => {
+  test("heartbeat --session outputs result as JSON", async () => {
+    // Register first
+    const regProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "HBAgent"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const regText = await new Response(regProc.stdout).text();
+    await regProc.exited;
+    const sessionId = JSON.parse(regText).session_id;
+
+    // Send heartbeat
+    const hbProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "heartbeat", "--session", sessionId, "--progress", "Testing"],
+      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+    );
+    const hbText = await new Response(hbProc.stdout).text();
+    await hbProc.exited;
+
+    const json = JSON.parse(hbText);
+    expect(json.ok).toBe(true);
+    expect(json.session_id).toBe(sessionId);
+    expect(json.agent_name).toBe("HBAgent");
+    expect(json.progress).toBe("Testing");
+  });
+});
+
 // T-3.1 + T-3.2: CLI commands (E2E via subprocess)
 describe("CLI agent register", () => {
   test("register --name outputs session details as JSON", async () => {

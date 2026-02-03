@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { CommandContext } from "../context";
-import { registerAgent, deregisterAgent } from "../agent";
+import { registerAgent, deregisterAgent, sendHeartbeat } from "../agent";
 import { formatJson } from "../output";
 import { withErrorHandling } from "../errors";
 
@@ -70,14 +70,26 @@ export function registerAgentCommands(
     .description("Send agent heartbeat")
     .requiredOption("--session <id>", "Session ID")
     .option("--progress <text>", "Progress note")
-    .action(async () => {
-      const ctx = getContext();
-      if (ctx.options.json) {
-        console.log(JSON.stringify({ ok: false, error: "Not yet implemented", timestamp: new Date().toISOString() }, null, 2));
-      } else {
-        console.log("Not yet implemented");
-      }
-    });
+    .option("--work-item <id>", "Work item ID")
+    .action(
+      withErrorHandling(async (opts) => {
+        const ctx = getContext();
+        const result = sendHeartbeat(ctx.db, {
+          sessionId: opts.session,
+          progress: opts.progress,
+          workItemId: opts.workItem,
+        });
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Heartbeat sent for ${result.session_id}`);
+          console.log(`Agent: ${result.agent_name}`);
+          console.log(`Time:  ${result.timestamp}`);
+          if (result.progress) console.log(`Note:  ${result.progress}`);
+        }
+      }, () => getContext().options.json)
+    );
 
   agent
     .command("list")
