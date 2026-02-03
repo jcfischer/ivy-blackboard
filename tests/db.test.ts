@@ -1,20 +1,23 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveDbPath, openDatabase, closeDatabase, getSchemaVersion } from "../src/db";
+import { resetConfigCache } from "../src/config";
 
 const TEST_DIR = join(tmpdir(), `blackboard-test-${Date.now()}`);
 
 describe("resolveDbPath", () => {
   beforeEach(() => {
     mkdirSync(TEST_DIR, { recursive: true });
-    // Clear env
+    // Clear env and config cache
     delete process.env.BLACKBOARD_DB;
+    resetConfigCache();
   });
 
   afterEach(() => {
     rmSync(TEST_DIR, { recursive: true, force: true });
+    resetConfigCache();
   });
 
   it("prefers --db flag over everything", () => {
@@ -57,6 +60,28 @@ describe("resolveDbPath", () => {
 
     resolveDbPath({}, TEST_DIR, fakeHome);
     expect(existsSync(join(fakeHome, ".pai", "blackboard"))).toBe(true);
+  });
+
+  it("uses config.database.projectDir for project directory name", () => {
+    resetConfigCache();
+    const projectDir = join(TEST_DIR, "project");
+    // Create a custom-named project dir
+    const customDir = join(projectDir, ".my-blackboard");
+    mkdirSync(customDir, { recursive: true });
+    const configDir = join(TEST_DIR, "cfg");
+    mkdirSync(configDir, { recursive: true });
+    const configPath = join(configDir, "config.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({ database: { projectDir: ".my-blackboard" } })
+    );
+
+    // Load config from our custom path
+    const { loadConfig } = require("../src/config");
+    loadConfig(configPath);
+
+    const result = resolveDbPath({}, projectDir);
+    expect(result).toBe(join(customDir, "local.db"));
   });
 });
 

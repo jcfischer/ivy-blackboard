@@ -11,6 +11,7 @@ import {
   CURRENT_SCHEMA_VERSION,
 } from "./schema";
 import type { DbOptions } from "./types";
+import { loadConfig } from "./config";
 
 /**
  * Resolve the database path using the 4-level chain:
@@ -40,18 +41,20 @@ export function resolveDbPath(
   }
 
   const workDir = cwd ?? process.cwd();
+  const config = loadConfig();
 
-  // Level 3: .blackboard/local.db (per-project)
-  const projectDir = join(workDir, ".blackboard");
+  // Level 3: <projectDir>/local.db (per-project)
+  const projectDir = join(workDir, config.database.projectDir);
   if (existsSync(projectDir)) {
     return join(projectDir, "local.db");
   }
 
-  // Level 4: ~/.pai/blackboard/local.db (operator-wide)
+  // Level 4: operator-wide path from config (~ expanded to home)
   const homeDir = home ?? homedir();
-  const operatorDir = join(homeDir, ".pai", "blackboard");
+  const operatorPath = config.database.operatorPath.replace(/^~/, homeDir);
+  const operatorDir = dirname(operatorPath);
   mkdirSync(operatorDir, { recursive: true });
-  return join(operatorDir, "local.db");
+  return operatorPath;
 }
 
 /**
