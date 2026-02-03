@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blackboard Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+      background: #0d1117;
+      color: #c9d1d9;
+      padding: 24px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    h1 { color: #58a6ff; font-size: 18px; margin-bottom: 4px; }
+    .subtitle { color: #8b949e; font-size: 12px; margin-bottom: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .card h2 {
+      color: #58a6ff;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #21262d;
+      padding-bottom: 8px;
+    }
+    .stat-row { display: flex; justify-content: space-between; padding: 4px 0; }
+    .stat-label { color: #8b949e; }
+    .stat-value { color: #c9d1d9; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th {
+      text-align: left;
+      color: #8b949e;
+      font-weight: 600;
+      padding: 6px 8px;
+      border-bottom: 1px solid #30363d;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+    td { padding: 6px 8px; border-bottom: 1px solid #21262d; }
+    .badge {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-active { background: #0d419d; color: #58a6ff; }
+    .badge-idle { background: #272e18; color: #7ee787; }
+    .badge-completed { background: #1c2128; color: #8b949e; }
+    .badge-stale { background: #3d1c00; color: #d29922; }
+    .badge-available { background: #0d419d; color: #58a6ff; }
+    .badge-claimed { background: #272e18; color: #7ee787; }
+    .badge-blocked { background: #490202; color: #f85149; }
+    .empty { color: #484f58; font-style: italic; padding: 12px 0; }
+    .event-line { padding: 3px 0; color: #8b949e; }
+    .event-type { color: #d2a8ff; }
+    .event-summary { color: #c9d1d9; }
+    .refresh-info { color: #484f58; font-size: 11px; text-align: right; }
+    .truncate { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  </style>
+</head>
+<body>
+  <h1>Blackboard Dashboard</h1>
+  <div class="subtitle">Local Agent Coordination — <span id="db-path">loading...</span> (<span id="db-size">...</span>)</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Overview</h2>
+      <div id="overview">
+        <div class="stat-row"><span class="stat-label">Agents</span><span class="stat-value" id="agent-stats">--</span></div>
+        <div class="stat-row"><span class="stat-label">Projects</span><span class="stat-value" id="project-count">--</span></div>
+        <div class="stat-row"><span class="stat-label">Work Items</span><span class="stat-value" id="work-stats">--</span></div>
+        <div class="stat-row"><span class="stat-label">Events (24h)</span><span class="stat-value" id="event-count">--</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Active Agents</h2>
+      <div id="agents-container"><span class="empty">Loading...</span></div>
+    </div>
+    <div class="card">
+      <h2>Work Items</h2>
+      <div id="work-container"><span class="empty">Loading...</span></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 16px;">
+    <h2>Recent Events</h2>
+    <div id="events-container"><span class="empty">Loading...</span></div>
+  </div>
+
+  <div class="refresh-info">Auto-refreshes every 5s — <span id="last-update">never</span></div>
+
+  <script>
+    const API = '';
+
+    function badge(status) {
+      const cls = `badge badge-${status}`;
+      return `<span class="${cls}">${status}</span>`;
+    }
+
+    function relTime(iso) {
+      const ms = Date.now() - new Date(iso).getTime();
+      const s = Math.floor(ms / 1000);
+      if (s < 60) return 'just now';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ago';
+      const h = Math.floor(m / 60);
+      if (h < 24) return h + 'h ago';
+      return Math.floor(h / 24) + 'd ago';
+    }
+
+    function truncate(str, len) {
+      if (!str) return '--';
+      return str.length > len ? str.slice(0, len) + '...' : str;
+    }
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch(API + '/api/status');
+        const data = await res.json();
+
+        document.getElementById('db-path').textContent = data.database || '--';
+        document.getElementById('db-size').textContent = data.database_size || '--';
+
+        const a = data.agents || {};
+        document.getElementById('agent-stats').textContent =
+          `${a.active || 0} active, ${a.idle || 0} idle, ${a.stale || 0} stale`;
+
+        document.getElementById('project-count').textContent = data.projects || 0;
+
+        const w = data.work_items || {};
+        document.getElementById('work-stats').textContent =
+          `${w.claimed || 0} claimed, ${w.available || 0} avail, ${w.blocked || 0} blocked`;
+
+        document.getElementById('event-count').textContent = data.events_24h || 0;
+      } catch (e) {
+        document.getElementById('agent-stats').textContent = 'Error';
+      }
+    }
+
+    async function fetchAgents() {
+      try {
+        const res = await fetch(API + '/api/agents');
+        const data = await res.json();
+        const el = document.getElementById('agents-container');
+
+        if (!data.items || data.items.length === 0) {
+          el.innerHTML = '<span class="empty">No active agents.</span>';
+          return;
+        }
+
+        let html = '<table><tr><th>Name</th><th>Status</th><th>Project</th><th>Work</th><th>Last Seen</th></tr>';
+        for (const a of data.items) {
+          html += `<tr>
+            <td>${a.agent_name}</td>
+            <td>${badge(a.status)}</td>
+            <td>${a.project || '--'}</td>
+            <td class="truncate">${truncate(a.current_work, 40)}</td>
+            <td>${relTime(a.last_seen_at)}</td>
+          </tr>`;
+        }
+        html += '</table>';
+        el.innerHTML = html;
+      } catch (e) {
+        document.getElementById('agents-container').innerHTML = '<span class="empty">Error loading agents.</span>';
+      }
+    }
+
+    async function fetchWork() {
+      try {
+        const res = await fetch(API + '/api/work?all=true');
+        const data = await res.json();
+        const el = document.getElementById('work-container');
+
+        if (!data.items || data.items.length === 0) {
+          el.innerHTML = '<span class="empty">No work items.</span>';
+          return;
+        }
+
+        let html = '<table><tr><th>ID</th><th>Title</th><th>Status</th><th>Priority</th><th>Claimed</th></tr>';
+        for (const w of data.items) {
+          html += `<tr>
+            <td>${w.item_id}</td>
+            <td class="truncate">${truncate(w.title, 35)}</td>
+            <td>${badge(w.status)}</td>
+            <td>${w.priority}</td>
+            <td>${w.claimed_by ? truncate(w.claimed_by, 12) : '--'}</td>
+          </tr>`;
+        }
+        html += '</table>';
+        el.innerHTML = html;
+      } catch (e) {
+        document.getElementById('work-container').innerHTML = '<span class="empty">Error loading work items.</span>';
+      }
+    }
+
+    async function fetchEvents() {
+      try {
+        const res = await fetch(API + '/api/events?limit=20');
+        const data = await res.json();
+        const el = document.getElementById('events-container');
+
+        if (!data.items || data.items.length === 0) {
+          el.innerHTML = '<span class="empty">No recent events.</span>';
+          return;
+        }
+
+        let html = '';
+        for (const e of data.items.reverse()) {
+          const actor = e.actor_id ? e.actor_id.slice(0, 12) : 'system';
+          html += `<div class="event-line">
+            <span style="color:#484f58">${relTime(e.timestamp)}</span>
+            <span class="event-type">${e.event_type}</span>
+            [${actor}]
+            <span class="event-summary">${e.summary}</span>
+          </div>`;
+        }
+        el.innerHTML = html;
+      } catch (e) {
+        document.getElementById('events-container').innerHTML = '<span class="empty">Error loading events.</span>';
+      }
+    }
+
+    async function refresh() {
+      await Promise.all([fetchStatus(), fetchAgents(), fetchWork(), fetchEvents()]);
+      document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
