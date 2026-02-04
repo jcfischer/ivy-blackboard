@@ -6,6 +6,8 @@ import { openDatabase, closeDatabase } from "../src/db";
 import { resetConfigCache } from "../src/config";
 import type { Database } from "bun:sqlite";
 
+const PROJECT_ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+
 let db: Database;
 let dbPath: string;
 let tmpDir: string;
@@ -30,13 +32,13 @@ describe("registerProject", () => {
     const result = registerProject(db, {
       id: "pai-collab",
       name: "PAI Collab",
-      path: "/Users/fischer/work/pai-collab",
+      path: "/tmp/test/example-project",
       repo: "mellanon/pai-collab",
     });
 
     expect(result.project_id).toBe("pai-collab");
     expect(result.display_name).toBe("PAI Collab");
-    expect(result.local_path).toBe("/Users/fischer/work/pai-collab");
+    expect(result.local_path).toBe("/tmp/test/example-project");
     expect(result.remote_repo).toBe("mellanon/pai-collab");
     expect(result.registered_at).toBeTruthy();
 
@@ -341,7 +343,7 @@ describe("CLI project register", () => {
   test("register --id --name outputs project as JSON", async () => {
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "project", "register", "--id", "cli-proj", "--name", "CLI Project", "--path", "/tmp/test"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -359,7 +361,7 @@ describe("CLI project status", () => {
     // Register project
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "project", "register", "--id", "status-cli", "--name", "CLI Status"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -367,7 +369,7 @@ describe("CLI project status", () => {
     // Get status
     const statusProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "project", "status", "status-cli"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(statusProc.stdout).text();
     await statusProc.exited;
@@ -382,7 +384,7 @@ describe("CLI project status", () => {
   test("status for missing project returns error", async () => {
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "project", "status", "missing-proj"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -398,14 +400,14 @@ describe("CLI project list", () => {
     // Register first
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "project", "register", "--id", "list-proj", "--name", "List Project"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     await new Response(regProc.stdout).text();
     await regProc.exited;
 
     const listProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "project", "list"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const listText = await new Response(listProc.stdout).text();
     await listProc.exited;

@@ -1,8 +1,8 @@
 # ivy-blackboard
 
-Local Agent Blackboard -- SQLite-based multi-agent coordination for PAI.
+Local Agent Blackboard — SQLite-based multi-agent coordination.
 
-A shared coordination layer that lets multiple Claude Code agents (or any CLI-driven agents) register, claim work, send heartbeats, and observe each other through a single local SQLite database.
+A shared coordination layer that lets multiple AI agents (Claude Code, or any CLI-driven agent) register, claim work, send heartbeats, and observe each other through a single local SQLite database. Based on the [blackboard pattern](https://en.wikipedia.org/wiki/Blackboard_(design_pattern)) from AI research.
 
 ## Quick Start
 
@@ -113,7 +113,7 @@ All fields have defaults -- the config file is optional.
 ## Testing
 
 ```bash
-bun test          # 294 tests across 18 files
+bun test          # 305 tests across 18 files
 ```
 
 ## Stack
@@ -124,6 +124,10 @@ bun test          # 294 tests across 18 files
 - **Validation:** Zod
 - **Dashboard:** Vanilla HTML/CSS/JS (no build step)
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.

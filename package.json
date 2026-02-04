@@ -1,7 +1,7 @@
 {
   "name": "ivy-blackboard",
   "version": "0.1.0",
-  "description": "Local Agent Blackboard — SQLite-based multi-agent coordination for PAI",
+  "description": "Local Agent Blackboard — SQLite-based multi-agent coordination",
   "type": "module",
   "main": "src/index.ts",
   "bin": {
@@ -12,6 +12,24 @@
     "test": "bun test",
     "build": "bun build src/index.ts --outdir dist --target node"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jcfischer/ivy-blackboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jcfischer/ivy-blackboard/issues"
+  },
+  "homepage": "https://github.com/jcfischer/ivy-blackboard#readme",
+  "author": "Jens-Christian Fischer",
+  "keywords": [
+    "agent-coordination",
+    "blackboard-pattern",
+    "multi-agent",
+    "sqlite",
+    "cli",
+    "typescript",
+    "bun"
+  ],
   "dependencies": {
     "commander": "^14.0.3",
     "zod": "^4.3.6"

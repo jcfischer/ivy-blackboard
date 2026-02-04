@@ -6,6 +6,8 @@ import { openDatabase, closeDatabase } from "../src/db";
 import { resetConfigCache } from "../src/config";
 import type { Database } from "bun:sqlite";
 
+const PROJECT_ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+
 let db: Database;
 let dbPath: string;
 let tmpDir: string;
@@ -205,14 +207,14 @@ describe("CLI observe", () => {
     // Register an agent first to generate events
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "Observer"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     await new Response(regProc.stdout).text();
     await regProc.exited;
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "observe"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -227,14 +229,14 @@ describe("CLI observe", () => {
     // Register an agent
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "Filtered"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     await new Response(regProc.stdout).text();
     await regProc.exited;
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "observe", "--filter", "agent_registered"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -249,7 +251,7 @@ describe("CLI observe", () => {
     for (let i = 0; i < 3; i++) {
       const p = Bun.spawn(
         ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", `Limit${i}`],
-        { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+        { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
       );
       await new Response(p.stdout).text();
       await p.exited;
@@ -257,7 +259,7 @@ describe("CLI observe", () => {
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "observe", "--limit", "2"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;

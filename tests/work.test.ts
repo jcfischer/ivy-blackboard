@@ -6,6 +6,8 @@ import { openDatabase, closeDatabase } from "../src/db";
 import { resetConfigCache } from "../src/config";
 import type { Database } from "bun:sqlite";
 
+const PROJECT_ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+
 let db: Database;
 let dbPath: string;
 let tmpDir: string;
@@ -385,7 +387,7 @@ describe("CLI work claim", () => {
     // Register agent first
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "CLIAgent"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const regText = await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -395,7 +397,7 @@ describe("CLI work claim", () => {
     const claimProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "cli-task", "--title", "CLI Task", "--session", sessionId, "--priority", "P1"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const claimText = await new Response(claimProc.stdout).text();
     await claimProc.exited;
@@ -412,7 +414,7 @@ describe("CLI work claim", () => {
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "no-claim", "--title", "Unclaimed"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -432,17 +434,17 @@ describe("CLI work list", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "list-1", "--title", "First"],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "list-2", "--title", "Second", "--priority", "P1"],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "list"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -457,7 +459,7 @@ describe("CLI work list", () => {
     // Create and claim one
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "ListAgent"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const regText = await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -466,17 +468,17 @@ describe("CLI work list", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "ls-1", "--title", "Available"],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "ls-2", "--title", "Claimed", "--session", sid],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "list", "--status", "claimed"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -724,7 +726,7 @@ describe("CLI work release", () => {
   test("release outputs JSON", async () => {
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "CLIReleaser"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const regText = await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -733,13 +735,13 @@ describe("CLI work release", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "cli-rel", "--title", "CLI Release", "--session", sid],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "release",
        "--id", "cli-rel", "--session", sid],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -755,7 +757,7 @@ describe("CLI work complete", () => {
   test("complete outputs JSON", async () => {
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "CLICompleter"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const regText = await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -764,13 +766,13 @@ describe("CLI work complete", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "cli-comp", "--title", "CLI Complete", "--session", sid],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "complete",
        "--id", "cli-comp", "--session", sid],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -787,13 +789,13 @@ describe("CLI work block/unblock", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "cli-blk", "--title", "CLI Block"],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const blockProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "block",
        "--id", "cli-blk", "--blocked-by", "other-item"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const blockText = await new Response(blockProc.stdout).text();
     await blockProc.exited;
@@ -806,7 +808,7 @@ describe("CLI work block/unblock", () => {
     const unblockProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "unblock",
        "--id", "cli-blk"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const unblockText = await new Response(unblockProc.stdout).text();
     await unblockProc.exited;
@@ -823,12 +825,12 @@ describe("CLI work status", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "stat-1", "--title", "Status Test"],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "status", "stat-1"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
