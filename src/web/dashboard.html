@@ -408,62 +408,64 @@
       }
     }
 
-    // SSE-powered events (with polling fallback)
+    // Events: deduplicated by ID, merged from SSE + polling
     const MAX_EVENT_LINES = 30;
-    let eventLines = [];
-    let sseConnected = false;
+    let eventMap = new Map(); // id -> event object
 
     function renderEvents() {
       const el = document.getElementById('events-container');
-      if (eventLines.length === 0) {
+      if (eventMap.size === 0) {
         el.innerHTML = '<span class="empty">No recent events.</span>';
         return;
       }
-      el.innerHTML = eventLines.join('');
+      const sorted = [...eventMap.values()].sort((a, b) => b.id - a.id).slice(0, MAX_EVENT_LINES);
+      el.innerHTML = sorted.map(e => {
+        const actor = e.actor_id ? e.actor_id.slice(0, 12) : 'system';
+        return `<div class="event-line">
+          <span style="color:#484f58">${relTime(e.timestamp)}</span>
+          <span class="event-type">${e.event_type}</span>
+          [${actor}]
+          <span class="event-summary">${e.summary}</span>
+        </div>`;
+      }).join('');
     }
 
-    function addEventLine(e) {
-      const actor = e.actor_id ? e.actor_id.slice(0, 12) : 'system';
-      const line = `<div class="event-line">
-        <span style="color:#484f58">${relTime(e.timestamp)}</span>
-        <span class="event-type">${e.event_type}</span>
-        [${actor}]
-        <span class="event-summary">${e.summary}</span>
-      </div>`;
-      eventLines.unshift(line);
-      if (eventLines.length > MAX_EVENT_LINES) eventLines.pop();
+    function addEvent(e) {
+      if (!e.id) return;
+      eventMap.set(e.id, e);
+      // Prune oldest if map grows too large
+      if (eventMap.size > MAX_EVENT_LINES * 2) {
+        const ids = [...eventMap.keys()].sort((a, b) => a - b);
+        for (let i = 0; i < ids.length - MAX_EVENT_LINES; i++) {
+          eventMap.delete(ids[i]);
+        }
+      }
     }
 
     function connectSSE() {
       try {
         const es = new EventSource(API + '/api/events/stream');
-        es.onopen = () => { sseConnected = true; };
         es.onmessage = (msg) => {
           try {
             const data = JSON.parse(msg.data);
             if (data.type === 'connected') return;
-            addEventLine(data);
+            addEvent(data);
             renderEvents();
           } catch {}
         };
         es.onerror = () => {
-          sseConnected = false;
           es.close();
           setTimeout(connectSSE, 5000);
         };
-      } catch {
-        sseConnected = false;
-      }
+      } catch {}
     }
 
     async function fetchEvents() {
-      if (sseConnected) return;
       try {
-        const res = await fetch(API + '/api/events?limit=20');
+        const res = await fetch(API + '/api/events?limit=30');
         const data = await res.json();
         if (!data.items || data.items.length === 0) return;
-        eventLines = [];
-        for (const e of data.items.reverse()) { addEventLine(e); }
+        for (const e of data.items) { addEvent(e); }
         renderEvents();
       } catch {}
     }
