@@ -6,6 +6,8 @@ import { openDatabase, closeDatabase } from "../src/db";
 import { resetConfigCache } from "../src/config";
 import type { Database } from "bun:sqlite";
 
+const PROJECT_ROOT = join(import.meta.dir, "..");
+
 let db: Database;
 let dbPath: string;
 let tmpDir: string;
@@ -118,7 +120,7 @@ describe("CLI export", () => {
   test("export outputs valid JSON snapshot", async () => {
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "export"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -131,7 +133,7 @@ describe("CLI export", () => {
   test("export --pretty outputs indented JSON", async () => {
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "export", "--pretty"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -145,7 +147,7 @@ describe("CLI export", () => {
     const outPath = join(tmpDir, "export.json");
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "export", "--output", outPath],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -161,7 +163,7 @@ describe("CLI export", () => {
     const outPath = join(tmpDir, "export2.json");
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "export", "--output", outPath],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;

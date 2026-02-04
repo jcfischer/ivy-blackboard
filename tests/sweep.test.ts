@@ -6,6 +6,8 @@ import { openDatabase, closeDatabase } from "../src/db";
 import { resetConfigCache } from "../src/config";
 import type { Database } from "bun:sqlite";
 
+const PROJECT_ROOT = join(import.meta.dir, "..");
+
 let db: Database;
 let dbPath: string;
 let tmpDir: string;
@@ -260,7 +262,7 @@ describe("CLI sweep", () => {
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "sweep"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -283,7 +285,7 @@ describe("CLI sweep", () => {
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "sweep", "--dry-run"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -314,7 +316,7 @@ describe("CLI sweep", () => {
     // With threshold=5, the agent (10s old) should be stale
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "sweep", "--threshold", "5"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -331,7 +333,7 @@ describe("CLI sweep", () => {
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "sweep"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;

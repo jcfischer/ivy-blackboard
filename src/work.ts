@@ -1,8 +1,8 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
 import { sanitizeText } from "./sanitize";
-import { WORK_ITEM_SOURCES, WORK_ITEM_PRIORITIES, WORK_ITEM_STATUSES } from "./types";
-import type { BlackboardWorkItem, BlackboardEvent } from "./types";
+import { WORK_ITEM_SOURCES, WORK_ITEM_PRIORITIES, WORK_ITEM_STATUSES, KNOWN_EVENT_TYPES } from "./types";
+import type { BlackboardWorkItem, BlackboardEvent, KnownEventType } from "./types";
 
 export interface CreateWorkItemOptions {
   id: string;
@@ -461,6 +461,68 @@ export function unblockWorkItem(
   return { item_id: itemId, unblocked: true, restored_status: restoredStatus };
 }
 
+export interface DeleteWorkItemResult {
+  item_id: string;
+  deleted: boolean;
+  title: string;
+  previous_status: string;
+  was_claimed_by: string | null;
+}
+
+/**
+ * Delete a work item from the blackboard.
+ * - Claimed items require force=true (agent is actively working)
+ * - Completed items can be deleted without force (history cleanup)
+ * - Cleans up heartbeat references before deletion
+ * - Emits work_deleted event with item details
+ */
+export function deleteWorkItem(
+  db: Database,
+  itemId: string,
+  force: boolean = false
+): DeleteWorkItemResult {
+  const item = db
+    .query("SELECT * FROM work_items WHERE item_id = ?")
+    .get(itemId) as BlackboardWorkItem | null;
+
+  if (!item) {
+    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
+  }
+
+  if (item.status === "claimed" && !force) {
+    throw new BlackboardError(
+      `Work item is currently claimed by ${item.claimed_by}. Use --force to delete.`,
+      "ITEM_CLAIMED"
+    );
+  }
+
+  const now = new Date().toISOString();
+  const previousStatus = item.status;
+  const wasClaimed = item.claimed_by;
+
+  db.transaction(() => {
+    // Clean up heartbeat references
+    db.query("UPDATE heartbeats SET work_item_id = NULL WHERE work_item_id = ?").run(itemId);
+
+    // Delete the work item
+    db.query("DELETE FROM work_items WHERE item_id = ?").run(itemId);
+
+    // Emit work_deleted event
+    const summary = `Work item "${item.title}" deleted (was ${previousStatus}${wasClaimed ? `, claimed by ${wasClaimed.slice(0, 12)}` : ""})`;
+    db.query(
+      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_deleted', NULL, ?, 'work_item', ?)"
+    ).run(now, itemId, summary);
+  })();
+
+  return {
+    item_id: itemId,
+    deleted: true,
+    title: item.title,
+    previous_status: previousStatus,
+    was_claimed_by: wasClaimed,
+  };
+}
+
 export interface ListWorkItemsOptions {
   all?: boolean;
   status?: string;
@@ -566,4 +628,121 @@ export function getWorkItemStatus(
     .all(itemId) as BlackboardEvent[];
 
   return { item, history };
+}
+
+export interface UpdateWorkItemMetadataResult {
+  item_id: string;
+  updated: boolean;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Merge new keys into a work item's existing metadata JSON.
+ * Does not replace the whole object — only updates provided keys.
+ * Emits a metadata_updated event.
+ */
+export function updateWorkItemMetadata(
+  db: Database,
+  itemId: string,
+  metadataUpdates: Record<string, unknown>
+): UpdateWorkItemMetadataResult {
+  const item = db
+    .query("SELECT * FROM work_items WHERE item_id = ?")
+    .get(itemId) as BlackboardWorkItem | null;
+
+  if (!item) {
+    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
+  }
+
+  // Parse existing metadata or start with empty object
+  let existing: Record<string, unknown> = {};
+  if (item.metadata) {
+    try {
+      existing = JSON.parse(item.metadata);
+    } catch {
+      // If existing metadata is somehow corrupt, start fresh
+      existing = {};
+    }
+  }
+
+  // Merge: new keys override existing
+  const merged = { ...existing, ...metadataUpdates };
+  const mergedJson = JSON.stringify(merged);
+
+  const now = new Date().toISOString();
+  const changedKeys = Object.keys(metadataUpdates);
+
+  db.transaction(() => {
+    db.query("UPDATE work_items SET metadata = ? WHERE item_id = ?").run(mergedJson, itemId);
+
+    const summary = `Metadata updated on "${item.title}": ${changedKeys.join(", ")}`;
+    db.query(
+      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary, metadata) VALUES (?, 'metadata_updated', NULL, ?, 'work_item', ?, ?)"
+    ).run(now, itemId, summary, JSON.stringify({ keys_updated: changedKeys }));
+  })();
+
+  return { item_id: itemId, updated: true, metadata: merged };
+}
+
+export interface AppendWorkItemEventOptions {
+  event_type: string;
+  summary: string;
+  actor_id?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AppendWorkItemEventResult {
+  item_id: string;
+  event_id: number;
+  event_type: string;
+  timestamp: string;
+}
+
+/**
+ * Record a structured event against a work item.
+ * Allows any valid event type to be appended with custom summary and metadata.
+ */
+export function appendWorkItemEvent(
+  db: Database,
+  itemId: string,
+  opts: AppendWorkItemEventOptions
+): AppendWorkItemEventResult {
+  const item = db
+    .query("SELECT item_id, title FROM work_items WHERE item_id = ?")
+    .get(itemId) as { item_id: string; title: string } | null;
+
+  if (!item) {
+    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
+  }
+
+  if (!KNOWN_EVENT_TYPES.includes(opts.event_type as KnownEventType)) {
+    throw new BlackboardError(
+      `Unknown event_type "${opts.event_type}". Known values: ${KNOWN_EVENT_TYPES.join(", ")}`,
+      "INVALID_EVENT_TYPE"
+    );
+  }
+
+  const summary = sanitizeText(opts.summary);
+  if (!summary) {
+    throw new BlackboardError("Event summary is required", "MISSING_SUMMARY");
+  }
+
+  let metadataJson: string | null = null;
+  if (opts.metadata) {
+    metadataJson = JSON.stringify(opts.metadata);
+  }
+
+  const now = new Date().toISOString();
+  const actorId = opts.actor_id ?? null;
+
+  const result = db.query(
+    "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary, metadata) VALUES (?, ?, ?, ?, 'work_item', ?, ?)"
+  ).run(now, opts.event_type, actorId, itemId, summary, metadataJson);
+
+  return {
+    item_id: itemId,
+    event_id: Number(result.lastInsertRowid),
+    event_type: opts.event_type,
+    timestamp: now,
+  };
 }

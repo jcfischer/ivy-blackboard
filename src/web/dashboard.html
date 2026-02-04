@@ -238,32 +238,63 @@
     .completion-bar { height: 4px; background: #21262d; border-radius: 2px; margin-top: 4px; overflow: hidden; }
     .completion-bar-fill { height: 100%; background: #7ee787; border-radius: 2px; transition: width 0.3s; }
 
+    /* Work item tabs */
+    .work-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid #21262d;
+      margin-bottom: 12px;
+    }
+    .work-tab {
+      background: none;
+      border: none;
+      color: #8b949e;
+      cursor: pointer;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-family: inherit;
+      border-bottom: 2px solid transparent;
+    }
+    .work-tab:hover { color: #c9d1d9; }
+    .work-tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+    .work-tab .tab-count {
+      display: inline-block;
+      background: #21262d;
+      color: #8b949e;
+      padding: 0 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      margin-left: 4px;
+    }
+    .work-tab.active .tab-count { background: #0d419d; color: #58a6ff; }
+
+
     /* Work item row clickable */
     tr.work-row { cursor: pointer; transition: background 0.15s; }
     tr.work-row:hover { background: #1c2128; }
     tr.work-row.selected { background: #1c2128; border-left: 2px solid #58a6ff; }
 
-    /* Work item detail panel */
-    .work-detail {
+    /* Work detail panel */
+    .work-detail-panel {
       background: #0d1117;
       border: 1px solid #30363d;
       border-radius: 6px;
       margin-top: 16px;
       display: none;
     }
-    .work-detail.visible { display: block; }
+    .work-detail-panel.visible { display: block; }
     .work-detail-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px 16px;
+      padding: 10px 16px;
       border-bottom: 1px solid #21262d;
       background: #161b22;
       border-radius: 6px 6px 0 0;
     }
     .work-detail-header h3 {
       color: #58a6ff;
-      font-size: 13px;
+      font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -279,20 +310,86 @@
     }
     .work-detail-close:hover { color: #c9d1d9; border-color: #484f58; }
     .work-detail-body { padding: 16px; }
-    .work-detail-fields {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
+    .work-detail-meta {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
       padding-bottom: 12px;
       border-bottom: 1px solid #21262d;
     }
-    .work-field { }
-    .work-field-label { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
-    .work-field-value { font-size: 13px; color: #c9d1d9; }
-    .work-description { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #21262d; color: #c9d1d9; font-size: 12px; line-height: 1.6; }
-    .work-description-label { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-    .work-history-label { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .work-meta-item { font-size: 11px; }
+    .work-meta-label { color: #8b949e; margin-right: 4px; }
+    .work-meta-value { color: #c9d1d9; }
+    .work-detail-description {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #c9d1d9;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .work-detail-section-title {
+      color: #8b949e;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      margin-top: 12px;
+    }
+    .work-timeline-event {
+      padding: 4px 0;
+      font-size: 11px;
+      color: #8b949e;
+      display: flex;
+      gap: 8px;
+    }
+    .work-timeline-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #30363d;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+    .work-timeline-dot.work_created { background: #58a6ff; }
+    .work-timeline-dot.work_claimed { background: #7ee787; }
+    .work-timeline-dot.work_completed { background: #8b949e; }
+    .work-timeline-dot.work_released { background: #d29922; }
+    .work-timeline-dot.work_blocked { background: #f85149; }
+    .work-agent-link {
+      color: #58a6ff;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .work-agent-link:hover { text-decoration: underline; }
+    .work-detail-metadata {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 11px;
+      font-family: 'SF Mono', 'Menlo', monospace;
+      color: #8b949e;
+      white-space: pre-wrap;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .duration-badge {
+      display: inline-block;
+      background: #272e18;
+      color: #7ee787;
+      padding: 0 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      margin-left: 4px;
+    }
   </style>
 </head>
 <body>
@@ -352,16 +449,18 @@
     </div>
     <div class="card">
       <h2>Work Items</h2>
+      <div class="work-tabs" id="work-tabs">
+        <button class="work-tab active" onclick="switchWorkTab('active')">Active <span class="tab-count" id="work-active-count">0</span></button>
+        <button class="work-tab" onclick="switchWorkTab('history')">History <span class="tab-count" id="work-history-count">0</span></button>
+      </div>
       <div id="work-container"><span class="empty">Loading...</span></div>
-      <div class="work-detail" id="work-detail">
+      <div class="work-detail-panel" id="work-detail-panel">
         <div class="work-detail-header">
           <h3>Work Item: <span id="work-detail-title">--</span></h3>
           <button class="work-detail-close" onclick="closeWorkDetail()">Close</button>
         </div>
-        <div class="work-detail-body">
-          <div class="work-detail-fields" id="work-detail-fields"></div>
-          <div id="work-detail-description"></div>
-          <div id="work-detail-history"></div>
+        <div class="work-detail-body" id="work-detail-body">
+          <span class="empty">Loading...</span>
         </div>
       </div>
     </div>
@@ -566,33 +665,198 @@
       }
     }
 
+    // ─── Work items with tabs + detail ──────────────────────────────
+    let currentWorkItems = [];
+    let currentWorkTab = 'active';
+    let selectedWorkId = null;
+
     async function fetchWork() {
       try {
         const res = await fetch(API + '/api/work?all=true');
         const data = await res.json();
-        const el = document.getElementById('work-container');
-
-        if (!data.items || data.items.length === 0) {
-          el.innerHTML = '<span class="empty">No work items.</span>';
-          return;
-        }
-
-        let html = '<table><tr><th>ID</th><th>Title</th><th>Status</th><th>Priority</th><th>Claimed</th></tr>';
-        for (const w of data.items) {
-          const isSelected = w.item_id === selectedWorkId;
-          html += `<tr class="work-row${isSelected ? ' selected' : ''}" onclick="selectWork('${escapeHtml(w.item_id)}')">
-            <td>${escapeHtml(w.item_id)}</td>
-            <td class="truncate">${truncate(w.title, 35)}</td>
-            <td>${badge(w.status)}</td>
-            <td>${w.priority}</td>
-            <td>${w.claimed_by ? truncate(w.claimed_by, 12) : '--'}</td>
-          </tr>`;
-        }
-        html += '</table>';
-        el.innerHTML = html;
+        currentWorkItems = data.items || [];
+        renderWorkItems();
       } catch (e) {
         document.getElementById('work-container').innerHTML = '<span class="empty">Error loading work items.</span>';
       }
+    }
+
+    function renderWorkItems() {
+      const el = document.getElementById('work-container');
+      const active = currentWorkItems.filter(w => w.status === 'available' || w.status === 'claimed' || w.status === 'blocked');
+      const history = currentWorkItems.filter(w => w.status === 'completed');
+
+      // Update tab counts
+      document.getElementById('work-active-count').textContent = active.length;
+      document.getElementById('work-history-count').textContent = history.length;
+
+      const items = currentWorkTab === 'active' ? active : history;
+
+      if (items.length === 0) {
+        const msg = currentWorkTab === 'active' ? 'No active work items.' : 'No completed work items.';
+        el.innerHTML = '<span class="empty">' + msg + '</span>';
+        return;
+      }
+
+      if (currentWorkTab === 'active') {
+        let html = '<table><tr><th>Title</th><th>Status</th><th>Priority</th><th>Claimed By</th><th>Created</th></tr>';
+        for (const w of items) {
+          const isSelected = w.item_id === selectedWorkId;
+          html += '<tr class="work-row' + (isSelected ? ' selected' : '') + '" onclick="selectWork(\'' + escapeHtml(w.item_id) + '\')">'
+            + '<td class="truncate">' + truncate(w.title, 40) + '</td>'
+            + '<td>' + badge(w.status) + '</td>'
+            + '<td>' + w.priority + '</td>'
+            + '<td>' + (w.claimed_by ? truncate(w.claimed_by, 12) : '--') + '</td>'
+            + '<td>' + relTime(w.created_at) + '</td>'
+            + '</tr>';
+        }
+        html += '</table>';
+        el.innerHTML = html;
+      } else {
+        // History: sort by completed_at DESC
+        const sorted = [...items].sort((a, b) => new Date(b.completed_at || 0).getTime() - new Date(a.completed_at || 0).getTime());
+        let html = '<table><tr><th>Title</th><th>Priority</th><th>Completed By</th><th>Completed</th><th>Duration</th></tr>';
+        for (const w of sorted) {
+          const isSelected = w.item_id === selectedWorkId;
+          const duration = w.created_at && w.completed_at ? formatDuration(new Date(w.completed_at).getTime() - new Date(w.created_at).getTime()) : '--';
+          html += '<tr class="work-row' + (isSelected ? ' selected' : '') + '" onclick="selectWork(\'' + escapeHtml(w.item_id) + '\')">'
+            + '<td class="truncate">' + truncate(w.title, 40) + '</td>'
+            + '<td>' + w.priority + '</td>'
+            + '<td>' + (w.claimed_by ? truncate(w.claimed_by, 12) : '--') + '</td>'
+            + '<td>' + (w.completed_at ? relTime(w.completed_at) : '--') + '</td>'
+            + '<td>' + duration + '</td>'
+            + '</tr>';
+        }
+        html += '</table>';
+        el.innerHTML = html;
+      }
+    }
+
+    function switchWorkTab(tab) {
+      currentWorkTab = tab;
+      document.querySelectorAll('.work-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('.work-tab[onclick*="' + tab + '"]').classList.add('active');
+      renderWorkItems();
+    }
+
+    function formatDuration(ms) {
+      if (ms < 0) return '--';
+      const s = Math.floor(ms / 1000);
+      if (s < 60) return s + 's';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm';
+      const h = Math.floor(m / 60);
+      const rm = m % 60;
+      if (h < 24) return h + 'h ' + rm + 'm';
+      const d = Math.floor(h / 24);
+      return d + 'd ' + (h % 24) + 'h';
+    }
+
+    async function selectWork(itemId) {
+      if (selectedWorkId === itemId) {
+        closeWorkDetail();
+        return;
+      }
+
+      selectedWorkId = itemId;
+      document.getElementById('work-detail-panel').classList.add('visible');
+      document.getElementById('work-detail-title').textContent = 'Loading...';
+      document.getElementById('work-detail-body').innerHTML = '<span class="empty">Loading...</span>';
+
+      // Re-render to show selection
+      renderWorkItems();
+
+      try {
+        const res = await fetch(API + '/api/work/' + encodeURIComponent(itemId));
+        const data = await res.json();
+
+        if (!data.ok) {
+          document.getElementById('work-detail-body').innerHTML = '<span class="empty">Work item not found.</span>';
+          return;
+        }
+
+        const item = data.item;
+        document.getElementById('work-detail-title').textContent = item.title;
+
+        let html = '';
+
+        // Meta info row
+        html += '<div class="work-detail-meta">';
+        html += '<div class="work-meta-item"><span class="work-meta-label">ID:</span><span class="work-meta-value">' + escapeHtml(item.item_id) + '</span></div>';
+        html += '<div class="work-meta-item"><span class="work-meta-label">Status:</span>' + badge(item.status) + '</div>';
+        html += '<div class="work-meta-item"><span class="work-meta-label">Priority:</span><span class="work-meta-value">' + item.priority + '</span></div>';
+        html += '<div class="work-meta-item"><span class="work-meta-label">Source:</span><span class="work-meta-value">' + (item.source || '--') + '</span></div>';
+        if (item.source_ref) {
+          html += '<div class="work-meta-item"><span class="work-meta-label">Ref:</span><span class="work-meta-value">' + escapeHtml(item.source_ref) + '</span></div>';
+        }
+        if (item.project_id) {
+          html += '<div class="work-meta-item"><span class="work-meta-label">Project:</span><span class="work-meta-value">' + escapeHtml(item.project_id) + '</span></div>';
+        }
+        html += '</div>';
+
+        // Agent info with link
+        if (item.claimed_by) {
+          const agentName = data.agent_name || item.claimed_by.slice(0, 12);
+          html += '<div class="work-detail-meta">';
+          html += '<div class="work-meta-item"><span class="work-meta-label">' + (item.status === 'completed' ? 'Completed By:' : 'Claimed By:') + '</span>';
+          html += '<span class="work-agent-link" onclick="navigateToAgent(\'' + escapeHtml(item.claimed_by) + '\')">' + escapeHtml(agentName) + '</span>';
+          html += ' <span style="color:#484f58;font-size:10px">(' + truncate(item.claimed_by, 12) + ')</span></div>';
+          if (item.claimed_at) {
+            html += '<div class="work-meta-item"><span class="work-meta-label">Claimed:</span><span class="work-meta-value">' + relTime(item.claimed_at) + '</span></div>';
+          }
+          if (item.completed_at) {
+            const duration = formatDuration(new Date(item.completed_at).getTime() - new Date(item.created_at).getTime());
+            html += '<div class="work-meta-item"><span class="work-meta-label">Completed:</span><span class="work-meta-value">' + relTime(item.completed_at) + '</span><span class="duration-badge">' + duration + '</span></div>';
+          }
+          html += '</div>';
+        }
+
+        // Description
+        if (item.description) {
+          html += '<div class="work-detail-section-title">Description</div>';
+          html += '<div class="work-detail-description">' + escapeHtml(item.description) + '</div>';
+        }
+
+        // Timeline
+        const history = data.history || [];
+        if (history.length > 0) {
+          html += '<div class="work-detail-section-title">Timeline</div>';
+          for (const ev of history) {
+            html += '<div class="work-timeline-event">';
+            html += '<span class="work-timeline-dot ' + escapeHtml(ev.event_type) + '"></span>';
+            html += '<span style="color:#484f58;min-width:50px">' + relTime(ev.timestamp) + '</span>';
+            html += '<span class="event-type">' + escapeHtml(ev.event_type) + '</span>';
+            html += '<span class="event-summary">' + escapeHtml(ev.summary) + '</span>';
+            html += '</div>';
+          }
+        }
+
+        // Metadata
+        if (item.metadata) {
+          try {
+            const meta = JSON.parse(item.metadata);
+            html += '<div class="work-detail-section-title">Metadata</div>';
+            html += '<div class="work-detail-metadata">' + escapeHtml(JSON.stringify(meta, null, 2)) + '</div>';
+          } catch {}
+        }
+
+        document.getElementById('work-detail-body').innerHTML = html;
+      } catch (e) {
+        document.getElementById('work-detail-body').innerHTML = '<span class="empty">Error loading work item detail.</span>';
+      }
+    }
+
+    function closeWorkDetail() {
+      selectedWorkId = null;
+      document.getElementById('work-detail-panel').classList.remove('visible');
+      renderWorkItems();
+    }
+
+    function navigateToAgent(sessionId) {
+      // Switch to agent log viewer
+      selectAgent(sessionId);
+      // Scroll to agents section
+      document.getElementById('agents-container').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     // Events: deduplicated by ID, merged from SSE + polling
@@ -655,122 +919,6 @@
         for (const e of data.items) { addEvent(e); }
         renderEvents();
       } catch {}
-    }
-
-    // ─── Work item detail ──────────────────────────────────────
-
-    let selectedWorkId = null;
-
-    async function selectWork(itemId) {
-      if (selectedWorkId === itemId) {
-        closeWorkDetail();
-        return;
-      }
-
-      selectedWorkId = itemId;
-      document.getElementById('work-detail').classList.add('visible');
-      document.getElementById('work-detail-title').textContent = 'Loading...';
-      document.getElementById('work-detail-fields').innerHTML = '<span class="empty">Loading...</span>';
-      document.getElementById('work-detail-description').innerHTML = '';
-      document.getElementById('work-detail-history').innerHTML = '';
-
-      // Re-render work list to show selection
-      fetchWork();
-
-      try {
-        const res = await fetch(API + '/api/work/' + encodeURIComponent(itemId));
-        const data = await res.json();
-
-        if (!data.ok) {
-          document.getElementById('work-detail-title').textContent = itemId;
-          document.getElementById('work-detail-fields').innerHTML = '<span class="empty">Work item not found.</span>';
-          return;
-        }
-
-        const item = data.item;
-        document.getElementById('work-detail-title').textContent = item.title;
-
-        // Fields grid
-        document.getElementById('work-detail-fields').innerHTML = `
-          <div class="work-field">
-            <div class="work-field-label">ID</div>
-            <div class="work-field-value">${escapeHtml(item.item_id)}</div>
-          </div>
-          <div class="work-field">
-            <div class="work-field-label">Status</div>
-            <div class="work-field-value">${badge(item.status)}</div>
-          </div>
-          <div class="work-field">
-            <div class="work-field-label">Priority</div>
-            <div class="work-field-value">${item.priority || '--'}</div>
-          </div>
-          <div class="work-field">
-            <div class="work-field-label">Project</div>
-            <div class="work-field-value">${item.project_id ? escapeHtml(item.project_id) : '--'}</div>
-          </div>
-          <div class="work-field">
-            <div class="work-field-label">Source</div>
-            <div class="work-field-value">${item.source ? escapeHtml(item.source) : '--'}${item.source_ref ? ' (' + escapeHtml(item.source_ref) + ')' : ''}</div>
-          </div>
-          <div class="work-field">
-            <div class="work-field-label">Claimed By</div>
-            <div class="work-field-value">${item.claimed_by ? `<a href="#" onclick="event.preventDefault(); selectAgent('${escapeHtml(item.claimed_by)}')" style="color:#58a6ff;text-decoration:none">${truncate(item.claimed_by, 16)}</a>` : '--'}</div>
-          </div>
-          <div class="work-field">
-            <div class="work-field-label">Claimed At</div>
-            <div class="work-field-value">${item.claimed_at ? relTime(item.claimed_at) : '--'}</div>
-          </div>
-          <div class="work-field">
-            <div class="work-field-label">Completed At</div>
-            <div class="work-field-value">${item.completed_at ? relTime(item.completed_at) : '--'}</div>
-          </div>
-          <div class="work-field">
-            <div class="work-field-label">Created</div>
-            <div class="work-field-value">${item.created_at ? relTime(item.created_at) : '--'}</div>
-          </div>
-        `;
-
-        // Description
-        if (item.description) {
-          document.getElementById('work-detail-description').innerHTML = `
-            <div class="work-description">
-              <div class="work-description-label">Description</div>
-              ${escapeHtml(item.description)}
-            </div>
-          `;
-        }
-
-        // Event history
-        const history = data.history || [];
-        if (history.length === 0) {
-          document.getElementById('work-detail-history').innerHTML = `
-            <div class="work-history-label">Event History</div>
-            <span class="empty">No events for this work item.</span>
-          `;
-        } else {
-          document.getElementById('work-detail-history').innerHTML = `
-            <div class="work-history-label">Event History</div>
-            ${history.map(e => {
-              const actor = e.actor_id ? e.actor_id.slice(0, 12) : 'system';
-              return `<div class="event-line">
-                <span style="color:#484f58">${relTime(e.timestamp)}</span>
-                <span class="event-type">${escapeHtml(e.event_type)}</span>
-                [${escapeHtml(actor)}]
-                <span class="event-summary">${escapeHtml(e.summary)}</span>
-              </div>`;
-            }).join('')}
-          `;
-        }
-
-      } catch (e) {
-        document.getElementById('work-detail-fields').innerHTML = '<span class="empty">Error loading work item detail.</span>';
-      }
-    }
-
-    function closeWorkDetail() {
-      selectedWorkId = null;
-      document.getElementById('work-detail').classList.remove('visible');
-      fetchWork();
     }
 
     // ─── Project list and detail ──────────────────────────────────
