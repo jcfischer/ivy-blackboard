@@ -82,6 +82,41 @@ export function registerWorkCommands(
     );
 
   work
+    .command("create")
+    .description("Create a new work item")
+    .requiredOption("--id <id>", "Work item ID")
+    .requiredOption("--title <title>", "Title")
+    .option("--description <desc>", "Description")
+    .option("--project <project>", "Project ID")
+    .option("--source <source>", "Source: github, local, operator")
+    .option("--source-ref <ref>", "External reference")
+    .option("--priority <priority>", "Priority: P1, P2, P3")
+    .option("--metadata <json>", "Metadata as JSON string")
+    .action(
+      withErrorHandling(async (opts) => {
+        const ctx = getContext();
+        const result = createWorkItem(ctx.db, {
+          id: opts.id,
+          title: opts.title,
+          description: opts.description,
+          project: opts.project,
+          source: opts.source,
+          sourceRef: opts.sourceRef,
+          priority: opts.priority,
+          metadata: opts.metadata,
+        });
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Created ${result.item_id}`);
+          console.log(`Title:  ${result.title}`);
+          console.log(`Status: ${result.status}`);
+        }
+      }, () => getContext().options.json)
+    );
+
+  work
     .command("release")
     .description("Release a claimed work item")
     .requiredOption("--id <id>", "Work item ID")
