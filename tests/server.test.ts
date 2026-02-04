@@ -144,6 +144,34 @@ describe("createServer", () => {
     expect(json.stats.active_agents).toBe(1);
   });
 
+  test("GET /api/work/:id returns work item detail with history", async () => {
+    const { createServer } = await import("../src/server");
+    const { createWorkItem } = await import("../src/work");
+    const { registerProject } = await import("../src/project");
+
+    registerProject(db, { id: "test-proj", name: "Test Project" });
+    createWorkItem(db, { id: "detail-w1", title: "Detail Task", description: "A test description", project: "test-proj", priority: "P1" });
+
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/work/detail-w1`);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.item.item_id).toBe("detail-w1");
+    expect(json.item.title).toBe("Detail Task");
+    expect(json.item.description).toBe("A test description");
+    expect(json.item.priority).toBe("P1");
+    expect(Array.isArray(json.history)).toBe(true);
+  });
+
+  test("GET /api/work/:id returns 400 for missing work item", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/work/nonexistent`);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+  });
+
   test("GET /api/projects/:id returns 400 for missing project", async () => {
     const { createServer } = await import("../src/server");
     server = createServer(db, dbPath, 0);
