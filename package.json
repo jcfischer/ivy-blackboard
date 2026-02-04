@@ -1,7 +1,7 @@
 {
   "name": "ivy-blackboard",
   "version": "0.1.0",
-  "description": "Local Agent Blackboard — SQLite-based multi-agent coordination for PAI",
+  "description": "Local agent blackboard — SQLite-based multi-agent coordination using the blackboard pattern",
   "type": "module",
   "main": "src/index.ts",
   "bin": {

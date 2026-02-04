@@ -30,21 +30,21 @@ describe("registerProject", () => {
   test("creates project row with all fields", async () => {
     const { registerProject } = await import("../src/project");
     const result = registerProject(db, {
-      id: "pai-collab",
-      name: "PAI Collab",
-      path: "/Users/fischer/work/pai-collab",
-      repo: "mellanon/pai-collab",
+      id: "my-project",
+      name: "My Project",
+      path: "/tmp/work/my-project",
+      repo: "org/my-project",
     });
 
-    expect(result.project_id).toBe("pai-collab");
-    expect(result.display_name).toBe("PAI Collab");
-    expect(result.local_path).toBe("/Users/fischer/work/pai-collab");
-    expect(result.remote_repo).toBe("mellanon/pai-collab");
+    expect(result.project_id).toBe("my-project");
+    expect(result.display_name).toBe("My Project");
+    expect(result.local_path).toBe("/tmp/work/my-project");
+    expect(result.remote_repo).toBe("org/my-project");
     expect(result.registered_at).toBeTruthy();
 
-    const row = db.query("SELECT * FROM projects WHERE project_id = ?").get("pai-collab") as any;
+    const row = db.query("SELECT * FROM projects WHERE project_id = ?").get("my-project") as any;
     expect(row).not.toBeNull();
-    expect(row.display_name).toBe("PAI Collab");
+    expect(row.display_name).toBe("My Project");
   });
 
   test("handles optional fields as null", async () => {
@@ -57,16 +57,16 @@ describe("registerProject", () => {
 
   test("emits project_registered event", async () => {
     const { registerProject } = await import("../src/project");
-    registerProject(db, { id: "pai-collab", name: "PAI Collab" });
+    registerProject(db, { id: "my-project", name: "My Project" });
 
     const event = db.query(
       "SELECT * FROM events WHERE event_type = 'project_registered'"
     ).get() as any;
 
     expect(event).not.toBeNull();
-    expect(event.target_id).toBe("pai-collab");
+    expect(event.target_id).toBe("my-project");
     expect(event.target_type).toBe("project");
-    expect(event.summary).toContain("PAI Collab");
+    expect(event.summary).toContain("My Project");
   });
 
   test("stores and retrieves metadata", async () => {
