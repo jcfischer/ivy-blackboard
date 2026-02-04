@@ -226,6 +226,116 @@ describe("getProjectStatus", () => {
   });
 });
 
+// T-4: listProjects enriched counts
+describe("listProjects enriched counts", () => {
+  test("includes work item counts by status", async () => {
+    const { registerProject, listProjects } = await import("../src/project");
+    const { registerAgent } = await import("../src/agent");
+    const { createWorkItem, claimWorkItem, completeWorkItem, blockWorkItem } = await import("../src/work");
+
+    registerProject(db, { id: "counts-proj", name: "Counts" });
+    const agent = registerAgent(db, { name: "Worker", project: "counts-proj" });
+
+    createWorkItem(db, { id: "c-avail", title: "Available", project: "counts-proj" });
+    createWorkItem(db, { id: "c-claimed", title: "Claimed", project: "counts-proj" });
+    claimWorkItem(db, "c-claimed", agent.session_id);
+    createWorkItem(db, { id: "c-done", title: "Done", project: "counts-proj" });
+    claimWorkItem(db, "c-done", agent.session_id);
+    completeWorkItem(db, "c-done", agent.session_id);
+    createWorkItem(db, { id: "c-blocked", title: "Blocked", project: "counts-proj" });
+    blockWorkItem(db, "c-blocked", { blockedBy: "dep" });
+
+    const result = listProjects(db);
+    const proj = result.find(p => p.project_id === "counts-proj");
+    expect(proj).toBeDefined();
+    expect(proj!.work_available).toBe(1);
+    expect(proj!.work_claimed).toBe(1);
+    expect(proj!.work_completed).toBe(1);
+    expect(proj!.work_blocked).toBe(1);
+  });
+
+  test("returns zero work counts for projects with no work", async () => {
+    const { registerProject, listProjects } = await import("../src/project");
+    registerProject(db, { id: "no-work", name: "No Work" });
+
+    const result = listProjects(db);
+    const proj = result.find(p => p.project_id === "no-work");
+    expect(proj!.work_available).toBe(0);
+    expect(proj!.work_claimed).toBe(0);
+    expect(proj!.work_completed).toBe(0);
+    expect(proj!.work_blocked).toBe(0);
+  });
+
+  test("includes last_activity timestamp", async () => {
+    const { registerProject, listProjects } = await import("../src/project");
+    registerProject(db, { id: "activity-proj", name: "Active" });
+
+    const result = listProjects(db);
+    const proj = result.find(p => p.project_id === "activity-proj");
+    // Should have last_activity from project_registered event
+    expect(proj!.last_activity).toBeTruthy();
+  });
+});
+
+// T-5: getProjectDetail
+describe("getProjectDetail", () => {
+  test("returns full project detail with stats", async () => {
+    const { registerProject, getProjectDetail } = await import("../src/project");
+    const { registerAgent } = await import("../src/agent");
+    const { createWorkItem, claimWorkItem, completeWorkItem } = await import("../src/work");
+
+    registerProject(db, { id: "detail-proj", name: "Detail Project", path: "/tmp/dp", repo: "https://github.com/test/repo" });
+    registerAgent(db, { name: "Agent1", project: "detail-proj" });
+    createWorkItem(db, { id: "d-1", title: "Task 1", project: "detail-proj" });
+    createWorkItem(db, { id: "d-2", title: "Task 2", project: "detail-proj" });
+    const agent = registerAgent(db, { name: "Agent2", project: "detail-proj" });
+    claimWorkItem(db, "d-1", agent.session_id);
+    completeWorkItem(db, "d-1", agent.session_id);
+
+    const result = getProjectDetail(db, "detail-proj");
+    expect(result.project.project_id).toBe("detail-proj");
+    expect(result.project.display_name).toBe("Detail Project");
+    expect(result.agents.length).toBe(2);
+    expect(result.work_items.length).toBe(2);
+    expect(result.events.length).toBeGreaterThan(0);
+    expect(result.stats.total_work).toBe(2);
+    expect(result.stats.completed_work).toBe(1);
+    expect(result.stats.completion_rate).toBe(50);
+    expect(result.stats.active_agents).toBe(2);
+    expect(result.stats.total_agents).toBe(2);
+    expect(result.stats.last_activity).toBeTruthy();
+  });
+
+  test("throws PROJECT_NOT_FOUND for missing project", async () => {
+    const { getProjectDetail } = await import("../src/project");
+    expect(() => getProjectDetail(db, "nonexistent")).toThrow("nonexistent");
+  });
+
+  test("returns 0% completion with no work items", async () => {
+    const { registerProject, getProjectDetail } = await import("../src/project");
+    registerProject(db, { id: "no-work-detail", name: "No Work" });
+
+    const result = getProjectDetail(db, "no-work-detail");
+    expect(result.stats.total_work).toBe(0);
+    expect(result.stats.completion_rate).toBe(0);
+  });
+
+  test("includes all agent statuses (active, completed, stale)", async () => {
+    const { registerProject, getProjectDetail } = await import("../src/project");
+    const { registerAgent, deregisterAgent } = await import("../src/agent");
+
+    registerProject(db, { id: "all-agents", name: "All Agents" });
+    registerAgent(db, { name: "Active", project: "all-agents" });
+    const done = registerAgent(db, { name: "Done", project: "all-agents" });
+    deregisterAgent(db, done.session_id);
+
+    const result = getProjectDetail(db, "all-agents");
+    expect(result.agents.length).toBe(2);
+    expect(result.stats.active_agents).toBe(1);
+    expect(result.stats.total_agents).toBe(2);
+  });
+});
+
 // T-3.1: CLI E2E
 describe("CLI project register", () => {
   test("register --id --name outputs project as JSON", async () => {

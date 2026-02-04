@@ -4,7 +4,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { getOverallStatus } from "./status";
 import { listAgents } from "./agent";
 import { listWorkItems } from "./work";
-import { listProjects } from "./project";
+import { listProjects, getProjectDetail } from "./project";
 import { observeEvents } from "./events";
 import type { BlackboardAgent } from "./types";
 
@@ -191,6 +191,14 @@ export function createServer(
         if (url.pathname === "/api/projects") {
           const projects = listProjects(db);
           return jsonResponse({ count: projects.length, items: projects });
+        }
+
+        // Project detail endpoint
+        const projectMatch = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
+        if (projectMatch) {
+          const projectId = decodeURIComponent(projectMatch[1]);
+          const detail = getProjectDetail(db, projectId);
+          return jsonResponse(detail);
         }
 
         // Dashboard HTML
