@@ -289,6 +289,39 @@ describe("sendHeartbeat", () => {
     const hb = db.query("SELECT work_item_id FROM heartbeats WHERE session_id = ?").get(agent.session_id) as any;
     expect(hb.work_item_id).toBe("work-hb-1");
   });
+
+  test("stores metadata JSON in heartbeat row", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+    const meta = JSON.stringify({ cost: 0.0012, model: "haiku", alerts: 2 });
+
+    const result = sendHeartbeat(db, { sessionId: agent.session_id, metadata: meta });
+    expect(result.metadata).toBe(meta);
+
+    const hb = db.query("SELECT metadata FROM heartbeats WHERE session_id = ?").get(agent.session_id) as any;
+    expect(hb.metadata).toBe(meta);
+    expect(JSON.parse(hb.metadata)).toEqual({ cost: 0.0012, model: "haiku", alerts: 2 });
+  });
+
+  test("rejects invalid metadata JSON", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+
+    expect(() =>
+      sendHeartbeat(db, { sessionId: agent.session_id, metadata: "not-json" })
+    ).toThrow("Invalid JSON in metadata");
+  });
+
+  test("metadata defaults to null when not provided", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+
+    const result = sendHeartbeat(db, { sessionId: agent.session_id });
+    expect(result.metadata).toBeNull();
+
+    const hb = db.query("SELECT metadata FROM heartbeats WHERE session_id = ?").get(agent.session_id) as any;
+    expect(hb.metadata).toBeNull();
+  });
 });
 
 // F-4 CLI heartbeat

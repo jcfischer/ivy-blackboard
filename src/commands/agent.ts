@@ -71,6 +71,7 @@ export function registerAgentCommands(
     .requiredOption("--session <id>", "Session ID")
     .option("--progress <text>", "Progress note")
     .option("--work-item <id>", "Work item ID")
+    .option("--metadata <json>", "JSON metadata blob")
     .action(
       withErrorHandling(async (opts) => {
         const ctx = getContext();
@@ -78,6 +79,7 @@ export function registerAgentCommands(
           sessionId: opts.session,
           progress: opts.progress,
           workItemId: opts.workItem,
+          metadata: opts.metadata,
         });
 
         if (ctx.options.json) {
