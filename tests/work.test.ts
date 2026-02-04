@@ -1057,11 +1057,11 @@ describe("updateWorkItemMetadata", () => {
     const { createWorkItem, updateWorkItemMetadata } = await import("../src/work");
     createWorkItem(db, { id: "meta-2", title: "With metadata", metadata: '{"labels": ["bug"], "priority": "high"}' });
 
-    const result = updateWorkItemMetadata(db, "meta-2", { approved_by: "jcfischer", auto_push: true });
+    const result = updateWorkItemMetadata(db, "meta-2", { approved_by: "test-user", auto_push: true });
     expect(result.metadata).toEqual({
       labels: ["bug"],
       priority: "high",
-      approved_by: "jcfischer",
+      approved_by: "test-user",
       auto_push: true,
     });
   });
@@ -1136,14 +1136,14 @@ describe("appendWorkItemEvent", () => {
 
     const result = appendWorkItemEvent(db, "evt-2", {
       event_type: "work_approved",
-      summary: "Approved by jcfischer",
-      actor_id: "jcfischer",
+      summary: "Approved by test-user",
+      actor_id: "test-user",
     });
 
     expect(result.event_type).toBe("work_approved");
 
     const event = db.query("SELECT * FROM events WHERE id = ?").get(result.event_id) as any;
-    expect(event.actor_id).toBe("jcfischer");
+    expect(event.actor_id).toBe("test-user");
   });
 
   test("appends a work_rejected event", async () => {
