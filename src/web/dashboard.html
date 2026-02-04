@@ -237,6 +237,62 @@
     .project-tab-content.active { display: block; }
     .completion-bar { height: 4px; background: #21262d; border-radius: 2px; margin-top: 4px; overflow: hidden; }
     .completion-bar-fill { height: 100%; background: #7ee787; border-radius: 2px; transition: width 0.3s; }
+
+    /* Work item row clickable */
+    tr.work-row { cursor: pointer; transition: background 0.15s; }
+    tr.work-row:hover { background: #1c2128; }
+    tr.work-row.selected { background: #1c2128; border-left: 2px solid #58a6ff; }
+
+    /* Work item detail panel */
+    .work-detail {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      margin-top: 16px;
+      display: none;
+    }
+    .work-detail.visible { display: block; }
+    .work-detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #21262d;
+      background: #161b22;
+      border-radius: 6px 6px 0 0;
+    }
+    .work-detail-header h3 {
+      color: #58a6ff;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .work-detail-close {
+      background: none;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: inherit;
+    }
+    .work-detail-close:hover { color: #c9d1d9; border-color: #484f58; }
+    .work-detail-body { padding: 16px; }
+    .work-detail-fields {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #21262d;
+    }
+    .work-field { }
+    .work-field-label { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+    .work-field-value { font-size: 13px; color: #c9d1d9; }
+    .work-description { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #21262d; color: #c9d1d9; font-size: 12px; line-height: 1.6; }
+    .work-description-label { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .work-history-label { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
   </style>
 </head>
 <body>
@@ -297,6 +353,17 @@
     <div class="card">
       <h2>Work Items</h2>
       <div id="work-container"><span class="empty">Loading...</span></div>
+      <div class="work-detail" id="work-detail">
+        <div class="work-detail-header">
+          <h3>Work Item: <span id="work-detail-title">--</span></h3>
+          <button class="work-detail-close" onclick="closeWorkDetail()">Close</button>
+        </div>
+        <div class="work-detail-body">
+          <div class="work-detail-fields" id="work-detail-fields"></div>
+          <div id="work-detail-description"></div>
+          <div id="work-detail-history"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -512,8 +579,9 @@
 
         let html = '<table><tr><th>ID</th><th>Title</th><th>Status</th><th>Priority</th><th>Claimed</th></tr>';
         for (const w of data.items) {
-          html += `<tr>
-            <td>${w.item_id}</td>
+          const isSelected = w.item_id === selectedWorkId;
+          html += `<tr class="work-row${isSelected ? ' selected' : ''}" onclick="selectWork('${escapeHtml(w.item_id)}')">
+            <td>${escapeHtml(w.item_id)}</td>
             <td class="truncate">${truncate(w.title, 35)}</td>
             <td>${badge(w.status)}</td>
             <td>${w.priority}</td>
@@ -587,6 +655,122 @@
         for (const e of data.items) { addEvent(e); }
         renderEvents();
       } catch {}
+    }
+
+    // ─── Work item detail ──────────────────────────────────────
+
+    let selectedWorkId = null;
+
+    async function selectWork(itemId) {
+      if (selectedWorkId === itemId) {
+        closeWorkDetail();
+        return;
+      }
+
+      selectedWorkId = itemId;
+      document.getElementById('work-detail').classList.add('visible');
+      document.getElementById('work-detail-title').textContent = 'Loading...';
+      document.getElementById('work-detail-fields').innerHTML = '<span class="empty">Loading...</span>';
+      document.getElementById('work-detail-description').innerHTML = '';
+      document.getElementById('work-detail-history').innerHTML = '';
+
+      // Re-render work list to show selection
+      fetchWork();
+
+      try {
+        const res = await fetch(API + '/api/work/' + encodeURIComponent(itemId));
+        const data = await res.json();
+
+        if (!data.ok) {
+          document.getElementById('work-detail-title').textContent = itemId;
+          document.getElementById('work-detail-fields').innerHTML = '<span class="empty">Work item not found.</span>';
+          return;
+        }
+
+        const item = data.item;
+        document.getElementById('work-detail-title').textContent = item.title;
+
+        // Fields grid
+        document.getElementById('work-detail-fields').innerHTML = `
+          <div class="work-field">
+            <div class="work-field-label">ID</div>
+            <div class="work-field-value">${escapeHtml(item.item_id)}</div>
+          </div>
+          <div class="work-field">
+            <div class="work-field-label">Status</div>
+            <div class="work-field-value">${badge(item.status)}</div>
+          </div>
+          <div class="work-field">
+            <div class="work-field-label">Priority</div>
+            <div class="work-field-value">${item.priority || '--'}</div>
+          </div>
+          <div class="work-field">
+            <div class="work-field-label">Project</div>
+            <div class="work-field-value">${item.project_id ? escapeHtml(item.project_id) : '--'}</div>
+          </div>
+          <div class="work-field">
+            <div class="work-field-label">Source</div>
+            <div class="work-field-value">${item.source ? escapeHtml(item.source) : '--'}${item.source_ref ? ' (' + escapeHtml(item.source_ref) + ')' : ''}</div>
+          </div>
+          <div class="work-field">
+            <div class="work-field-label">Claimed By</div>
+            <div class="work-field-value">${item.claimed_by ? `<a href="#" onclick="event.preventDefault(); selectAgent('${escapeHtml(item.claimed_by)}')" style="color:#58a6ff;text-decoration:none">${truncate(item.claimed_by, 16)}</a>` : '--'}</div>
+          </div>
+          <div class="work-field">
+            <div class="work-field-label">Claimed At</div>
+            <div class="work-field-value">${item.claimed_at ? relTime(item.claimed_at) : '--'}</div>
+          </div>
+          <div class="work-field">
+            <div class="work-field-label">Completed At</div>
+            <div class="work-field-value">${item.completed_at ? relTime(item.completed_at) : '--'}</div>
+          </div>
+          <div class="work-field">
+            <div class="work-field-label">Created</div>
+            <div class="work-field-value">${item.created_at ? relTime(item.created_at) : '--'}</div>
+          </div>
+        `;
+
+        // Description
+        if (item.description) {
+          document.getElementById('work-detail-description').innerHTML = `
+            <div class="work-description">
+              <div class="work-description-label">Description</div>
+              ${escapeHtml(item.description)}
+            </div>
+          `;
+        }
+
+        // Event history
+        const history = data.history || [];
+        if (history.length === 0) {
+          document.getElementById('work-detail-history').innerHTML = `
+            <div class="work-history-label">Event History</div>
+            <span class="empty">No events for this work item.</span>
+          `;
+        } else {
+          document.getElementById('work-detail-history').innerHTML = `
+            <div class="work-history-label">Event History</div>
+            ${history.map(e => {
+              const actor = e.actor_id ? e.actor_id.slice(0, 12) : 'system';
+              return `<div class="event-line">
+                <span style="color:#484f58">${relTime(e.timestamp)}</span>
+                <span class="event-type">${escapeHtml(e.event_type)}</span>
+                [${escapeHtml(actor)}]
+                <span class="event-summary">${escapeHtml(e.summary)}</span>
+              </div>`;
+            }).join('')}
+          `;
+        }
+
+      } catch (e) {
+        document.getElementById('work-detail-fields').innerHTML = '<span class="empty">Error loading work item detail.</span>';
+      }
+    }
+
+    function closeWorkDetail() {
+      selectedWorkId = null;
+      document.getElementById('work-detail').classList.remove('visible');
+      fetchWork();
     }
 
     // ─── Project list and detail ──────────────────────────────────

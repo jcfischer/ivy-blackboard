@@ -3,7 +3,7 @@ import type { Server } from "bun";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { getOverallStatus } from "./status";
 import { listAgents } from "./agent";
-import { listWorkItems } from "./work";
+import { listWorkItems, getWorkItemStatus } from "./work";
 import { listProjects, getProjectDetail } from "./project";
 import { observeEvents } from "./events";
 import type { BlackboardAgent } from "./types";
@@ -66,6 +66,14 @@ export function createServer(
           const project = url.searchParams.get("project") ?? undefined;
           const items = listWorkItems(db, { all, status, project });
           return jsonResponse({ count: items.length, items });
+        }
+
+        // Work item detail endpoint
+        const workMatch = url.pathname.match(/^\/api\/work\/([^/]+)$/);
+        if (workMatch) {
+          const itemId = decodeURIComponent(workMatch[1]);
+          const detail = getWorkItemStatus(db, itemId);
+          return jsonResponse(detail);
         }
 
         if (url.pathname === "/api/events") {
