@@ -140,6 +140,103 @@
       50% { opacity: 0.3; }
     }
     .log-no-content { color: #484f58; font-style: italic; }
+
+    /* Project cards */
+    .project-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+    .project-card {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .project-card:hover { border-color: #58a6ff; background: #161b22; }
+    .project-card.selected { border-color: #58a6ff; border-left: 3px solid #58a6ff; }
+    .project-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .project-card-name { color: #58a6ff; font-weight: 600; font-size: 13px; }
+    .project-card-id { color: #484f58; font-size: 11px; }
+    .project-card-stats { display: flex; gap: 10px; font-size: 11px; color: #8b949e; }
+    .project-card-stats .stat { display: flex; align-items: center; gap: 3px; }
+    .project-card-stats .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+    .project-card-stats .dot-active { background: #58a6ff; }
+    .project-card-stats .dot-available { background: #7ee787; }
+    .project-card-stats .dot-claimed { background: #d29922; }
+    .project-card-stats .dot-completed { background: #8b949e; }
+    .project-card-stats .dot-blocked { background: #f85149; }
+    .project-card-meta { margin-top: 6px; font-size: 11px; color: #484f58; }
+    .project-card-meta a { color: #58a6ff; text-decoration: none; }
+    .project-card-meta a:hover { text-decoration: underline; }
+
+    /* Project detail panel */
+    .project-detail {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      margin-top: 16px;
+      display: none;
+    }
+    .project-detail.visible { display: block; }
+    .project-detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #21262d;
+      background: #161b22;
+      border-radius: 6px 6px 0 0;
+    }
+    .project-detail-header h3 {
+      color: #58a6ff;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .project-detail-close {
+      background: none;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: inherit;
+    }
+    .project-detail-close:hover { color: #c9d1d9; border-color: #484f58; }
+    .project-detail-body { padding: 16px; }
+    .project-detail-stats {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #21262d;
+    }
+    .project-stat-box { text-align: center; }
+    .project-stat-number { font-size: 20px; font-weight: 700; color: #c9d1d9; }
+    .project-stat-label { font-size: 10px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+    .project-stat-number.rate { color: #7ee787; }
+    .project-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid #21262d;
+      margin-bottom: 12px;
+    }
+    .project-tab {
+      background: none;
+      border: none;
+      color: #8b949e;
+      cursor: pointer;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-family: inherit;
+      border-bottom: 2px solid transparent;
+    }
+    .project-tab:hover { color: #c9d1d9; }
+    .project-tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+    .project-tab-content { display: none; }
+    .project-tab-content.active { display: block; }
+    .completion-bar { height: 4px; background: #21262d; border-radius: 2px; margin-top: 4px; overflow: hidden; }
+    .completion-bar-fill { height: 100%; background: #7ee787; border-radius: 2px; transition: width 0.3s; }
   </style>
 </head>
 <body>
@@ -154,6 +251,28 @@
         <div class="stat-row"><span class="stat-label">Projects</span><span class="stat-value" id="project-count">--</span></div>
         <div class="stat-row"><span class="stat-label">Work Items</span><span class="stat-value" id="work-stats">--</span></div>
         <div class="stat-row"><span class="stat-label">Events (24h)</span><span class="stat-value" id="event-count">--</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 16px;">
+    <h2>Projects</h2>
+    <div id="projects-container"><span class="empty">Loading...</span></div>
+    <div class="project-detail" id="project-detail">
+      <div class="project-detail-header">
+        <h3>Project: <span id="project-detail-name">--</span></h3>
+        <button class="project-detail-close" onclick="closeProjectDetail()">Close</button>
+      </div>
+      <div class="project-detail-body">
+        <div class="project-detail-stats" id="project-detail-stats"></div>
+        <div class="project-tabs" id="project-tabs">
+          <button class="project-tab active" onclick="switchProjectTab('agents')">Agents</button>
+          <button class="project-tab" onclick="switchProjectTab('work')">Work Items</button>
+          <button class="project-tab" onclick="switchProjectTab('events')">Events</button>
+        </div>
+        <div class="project-tab-content active" id="project-tab-agents"></div>
+        <div class="project-tab-content" id="project-tab-work"></div>
+        <div class="project-tab-content" id="project-tab-events"></div>
       </div>
     </div>
   </div>
@@ -470,8 +589,183 @@
       } catch {}
     }
 
+    // ─── Project list and detail ──────────────────────────────────
+
+    let selectedProjectId = null;
+
+    async function fetchProjects() {
+      try {
+        const res = await fetch(API + '/api/projects');
+        const data = await res.json();
+        const el = document.getElementById('projects-container');
+        const projects = data.items || [];
+
+        if (projects.length === 0) {
+          el.innerHTML = '<span class="empty">No projects registered.</span>';
+          return;
+        }
+
+        let html = '<div class="project-grid">';
+        for (const p of projects) {
+          const isSelected = p.project_id === selectedProjectId;
+          const totalWork = (p.work_available || 0) + (p.work_claimed || 0) + (p.work_completed || 0) + (p.work_blocked || 0);
+          const lastAct = p.last_activity ? relTime(p.last_activity) : 'never';
+
+          html += `<div class="project-card${isSelected ? ' selected' : ''}" onclick="selectProject('${escapeHtml(p.project_id)}')">
+            <div class="project-card-header">
+              <span class="project-card-name">${escapeHtml(p.display_name)}</span>
+              <span class="project-card-id">${escapeHtml(p.project_id)}</span>
+            </div>
+            <div class="project-card-stats">
+              ${p.active_agents > 0 ? `<span class="stat"><span class="dot dot-active"></span>${p.active_agents} agent${p.active_agents !== 1 ? 's' : ''}</span>` : ''}
+              ${p.work_available > 0 ? `<span class="stat"><span class="dot dot-available"></span>${p.work_available} avail</span>` : ''}
+              ${p.work_claimed > 0 ? `<span class="stat"><span class="dot dot-claimed"></span>${p.work_claimed} claimed</span>` : ''}
+              ${p.work_completed > 0 ? `<span class="stat"><span class="dot dot-completed"></span>${p.work_completed} done</span>` : ''}
+              ${p.work_blocked > 0 ? `<span class="stat"><span class="dot dot-blocked"></span>${p.work_blocked} blocked</span>` : ''}
+              ${totalWork === 0 && p.active_agents === 0 ? '<span class="stat" style="color:#484f58">no activity</span>' : ''}
+            </div>
+            <div class="project-card-meta">
+              ${p.remote_repo ? `<a href="${escapeHtml(p.remote_repo)}" target="_blank" onclick="event.stopPropagation()">repo</a> · ` : ''}
+              ${lastAct !== 'never' ? lastAct : 'registered ' + relTime(p.registered_at)}
+            </div>
+          </div>`;
+        }
+        html += '</div>';
+        el.innerHTML = html;
+      } catch (e) {
+        document.getElementById('projects-container').innerHTML = '<span class="empty">Error loading projects.</span>';
+      }
+    }
+
+    async function selectProject(projectId) {
+      if (selectedProjectId === projectId) {
+        closeProjectDetail();
+        return;
+      }
+
+      selectedProjectId = projectId;
+      document.getElementById('project-detail').classList.add('visible');
+      document.getElementById('project-detail-name').textContent = projectId;
+      document.getElementById('project-detail-stats').innerHTML = '<span class="empty">Loading...</span>';
+
+      // Re-render project list to show selection
+      fetchProjects();
+
+      try {
+        const res = await fetch(API + '/api/projects/' + encodeURIComponent(projectId));
+        const data = await res.json();
+
+        if (!data.ok) {
+          document.getElementById('project-detail-stats').innerHTML = '<span class="empty">Project not found.</span>';
+          return;
+        }
+
+        document.getElementById('project-detail-name').textContent = data.project.display_name;
+
+        // Stats bar
+        const s = data.stats;
+        document.getElementById('project-detail-stats').innerHTML = `
+          <div class="project-stat-box">
+            <div class="project-stat-number">${s.active_agents}</div>
+            <div class="project-stat-label">Active Agents</div>
+          </div>
+          <div class="project-stat-box">
+            <div class="project-stat-number">${s.total_work}</div>
+            <div class="project-stat-label">Work Items</div>
+          </div>
+          <div class="project-stat-box">
+            <div class="project-stat-number rate">${s.completion_rate}%</div>
+            <div class="project-stat-label">Completion</div>
+            <div class="completion-bar" style="width:80px"><div class="completion-bar-fill" style="width:${s.completion_rate}%"></div></div>
+          </div>
+          <div class="project-stat-box">
+            <div class="project-stat-number">${s.total_agents}</div>
+            <div class="project-stat-label">Total Agents</div>
+          </div>
+          <div class="project-stat-box">
+            <div class="project-stat-label" style="font-size:11px;text-transform:none">${s.last_activity ? relTime(s.last_activity) : 'no activity'}</div>
+            <div class="project-stat-label">Last Activity</div>
+          </div>
+        `;
+
+        // Agents tab
+        const agents = data.agents || [];
+        if (agents.length === 0) {
+          document.getElementById('project-tab-agents').innerHTML = '<span class="empty">No agents for this project.</span>';
+        } else {
+          let ahtml = '<table><tr><th>Name</th><th>Status</th><th>Work</th><th>Last Seen</th><th>Started</th></tr>';
+          for (const a of agents) {
+            ahtml += `<tr>
+              <td>${escapeHtml(a.agent_name)}</td>
+              <td>${badge(a.status)}</td>
+              <td class="truncate">${truncate(a.current_work, 35)}</td>
+              <td>${relTime(a.last_seen_at)}</td>
+              <td>${relTime(a.started_at)}</td>
+            </tr>`;
+          }
+          ahtml += '</table>';
+          document.getElementById('project-tab-agents').innerHTML = ahtml;
+        }
+
+        // Work items tab
+        const work = data.work_items || [];
+        if (work.length === 0) {
+          document.getElementById('project-tab-work').innerHTML = '<span class="empty">No work items for this project.</span>';
+        } else {
+          let whtml = '<table><tr><th>ID</th><th>Title</th><th>Status</th><th>Priority</th><th>Claimed</th><th>Created</th></tr>';
+          for (const w of work) {
+            whtml += `<tr>
+              <td>${escapeHtml(w.item_id)}</td>
+              <td class="truncate">${truncate(w.title, 30)}</td>
+              <td>${badge(w.status)}</td>
+              <td>${w.priority}</td>
+              <td>${w.claimed_by ? truncate(w.claimed_by, 12) : '--'}</td>
+              <td>${relTime(w.created_at)}</td>
+            </tr>`;
+          }
+          whtml += '</table>';
+          document.getElementById('project-tab-work').innerHTML = whtml;
+        }
+
+        // Events tab
+        const events = data.events || [];
+        if (events.length === 0) {
+          document.getElementById('project-tab-events').innerHTML = '<span class="empty">No events for this project.</span>';
+        } else {
+          document.getElementById('project-tab-events').innerHTML = events.slice(0, 30).map(e => {
+            const actor = e.actor_id ? e.actor_id.slice(0, 12) : 'system';
+            return `<div class="event-line">
+              <span style="color:#484f58">${relTime(e.timestamp)}</span>
+              <span class="event-type">${escapeHtml(e.event_type)}</span>
+              [${escapeHtml(actor)}]
+              <span class="event-summary">${escapeHtml(e.summary)}</span>
+            </div>`;
+          }).join('');
+        }
+
+        // Default to agents tab
+        switchProjectTab('agents');
+
+      } catch (e) {
+        document.getElementById('project-detail-stats').innerHTML = '<span class="empty">Error loading project detail.</span>';
+      }
+    }
+
+    function closeProjectDetail() {
+      selectedProjectId = null;
+      document.getElementById('project-detail').classList.remove('visible');
+      fetchProjects();
+    }
+
+    function switchProjectTab(tab) {
+      document.querySelectorAll('.project-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.project-tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelector(`.project-tab[onclick*="${tab}"]`).classList.add('active');
+      document.getElementById('project-tab-' + tab).classList.add('active');
+    }
+
     async function refresh() {
-      await Promise.all([fetchStatus(), fetchAgents(), fetchWork(), fetchEvents()]);
+      await Promise.all([fetchStatus(), fetchProjects(), fetchAgents(), fetchWork(), fetchEvents()]);
       document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
     }
 

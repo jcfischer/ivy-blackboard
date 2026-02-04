@@ -123,6 +123,36 @@ describe("createServer", () => {
     expect(json.items[0].project_id).toBe("srv-p1");
   });
 
+  test("GET /api/projects/:id returns project detail", async () => {
+    const { createServer } = await import("../src/server");
+    const { registerProject } = await import("../src/project");
+    const { registerAgent } = await import("../src/agent");
+    const { createWorkItem } = await import("../src/work");
+
+    registerProject(db, { id: "detail-srv", name: "Detail Server" });
+    registerAgent(db, { name: "Agent1", project: "detail-srv" });
+    createWorkItem(db, { id: "ds-w1", title: "Detail Task", project: "detail-srv" });
+
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/projects/detail-srv`);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.project.project_id).toBe("detail-srv");
+    expect(json.agents.length).toBe(1);
+    expect(json.work_items.length).toBe(1);
+    expect(json.stats.total_work).toBe(1);
+    expect(json.stats.active_agents).toBe(1);
+  });
+
+  test("GET /api/projects/:id returns 400 for missing project", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/projects/nonexistent`);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+  });
+
   test("GET /unknown returns 404", async () => {
     const { createServer } = await import("../src/server");
     server = createServer(db, dbPath, 0);
