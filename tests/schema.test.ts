@@ -96,8 +96,8 @@ describe("schema SQL constants", () => {
     expect(version.version).toBe(1);
   });
 
-  it("CURRENT_SCHEMA_VERSION equals 1", () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(1);
+  it("CURRENT_SCHEMA_VERSION equals 2", () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(2);
   });
 });
 
@@ -158,27 +158,23 @@ describe("CHECK constraints", () => {
     }).toThrow();
   });
 
-  it("events rejects invalid event_type", () => {
-    expect(() => {
-      db.query(
-        "INSERT INTO events (timestamp, event_type, summary) VALUES (?, ?, ?)"
-      ).run("2026-01-01", "invalid_type", "test");
-    }).toThrow();
-  });
+  it("events accepts any event_type (no CHECK constraint)", () => {
+    // Known types work
+    db.query(
+      "INSERT INTO events (timestamp, event_type, summary) VALUES (?, ?, ?)"
+    ).run("2026-01-01", "agent_registered", "test known type");
 
-  it("events accepts all valid event_types", () => {
-    const types = [
-      "agent_registered", "agent_deregistered", "agent_stale", "agent_recovered",
-      "work_claimed", "work_released", "work_completed", "work_blocked", "work_created",
-      "project_registered", "project_updated", "heartbeat_received", "stale_locks_released",
-    ];
-    for (const type of types) {
-      db.query(
-        "INSERT INTO events (timestamp, event_type, summary) VALUES (?, ?, ?)"
-      ).run("2026-01-01", type, `test ${type}`);
-    }
+    // Custom types from downstream consumers also work
+    db.query(
+      "INSERT INTO events (timestamp, event_type, summary) VALUES (?, ?, ?)"
+    ).run("2026-01-01", "heartbeat_check", "test custom type");
+
+    db.query(
+      "INSERT INTO events (timestamp, event_type, summary) VALUES (?, ?, ?)"
+    ).run("2026-01-01", "session_started", "test custom type");
+
     const count = db.query("SELECT COUNT(*) as c FROM events").get() as any;
-    expect(count.c).toBe(13);
+    expect(count.c).toBe(3);
   });
 
   it("events rejects invalid target_type", () => {

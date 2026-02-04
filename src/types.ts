@@ -24,8 +24,8 @@ export type WorkItemPriority = (typeof WORK_ITEM_PRIORITIES)[number];
 export const WORK_ITEM_SOURCES = ["github", "local", "operator"] as const;
 export type WorkItemSource = (typeof WORK_ITEM_SOURCES)[number];
 
-// Event type values (14 types)
-export const EVENT_TYPES = [
+// Known blackboard event types (not exhaustive — downstream consumers may define their own)
+export const KNOWN_EVENT_TYPES = [
   "agent_registered",
   "agent_deregistered",
   "agent_stale",
@@ -40,7 +40,10 @@ export const EVENT_TYPES = [
   "heartbeat_received",
   "stale_locks_released",
 ] as const;
-export type EventType = (typeof EVENT_TYPES)[number];
+export type KnownEventType = (typeof KNOWN_EVENT_TYPES)[number];
+
+// Event type is free-form text — no CHECK constraint in the database
+export type EventType = string;
 
 // Target type for events
 export const TARGET_TYPES = ["agent", "work_item", "project"] as const;

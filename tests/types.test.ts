@@ -16,7 +16,7 @@ import {
   WORK_ITEM_STATUSES,
   WORK_ITEM_PRIORITIES,
   WORK_ITEM_SOURCES,
-  EVENT_TYPES,
+  KNOWN_EVENT_TYPES,
 } from "../src/types";
 
 describe("types", () => {
@@ -50,21 +50,26 @@ describe("types", () => {
   });
 
   describe("EventType", () => {
-    it("has exactly 13 values matching schema CHECK constraint", () => {
-      expect(EVENT_TYPES).toHaveLength(13);
-      expect(EVENT_TYPES).toContain("agent_registered");
-      expect(EVENT_TYPES).toContain("agent_deregistered");
-      expect(EVENT_TYPES).toContain("agent_stale");
-      expect(EVENT_TYPES).toContain("agent_recovered");
-      expect(EVENT_TYPES).toContain("work_claimed");
-      expect(EVENT_TYPES).toContain("work_released");
-      expect(EVENT_TYPES).toContain("work_completed");
-      expect(EVENT_TYPES).toContain("work_blocked");
-      expect(EVENT_TYPES).toContain("work_created");
-      expect(EVENT_TYPES).toContain("project_registered");
-      expect(EVENT_TYPES).toContain("project_updated");
-      expect(EVENT_TYPES).toContain("heartbeat_received");
-      expect(EVENT_TYPES).toContain("stale_locks_released");
+    it("KNOWN_EVENT_TYPES lists 13 known blackboard event types", () => {
+      expect(KNOWN_EVENT_TYPES).toHaveLength(13);
+      expect(KNOWN_EVENT_TYPES).toContain("agent_registered");
+      expect(KNOWN_EVENT_TYPES).toContain("agent_deregistered");
+      expect(KNOWN_EVENT_TYPES).toContain("agent_stale");
+      expect(KNOWN_EVENT_TYPES).toContain("agent_recovered");
+      expect(KNOWN_EVENT_TYPES).toContain("work_claimed");
+      expect(KNOWN_EVENT_TYPES).toContain("work_released");
+      expect(KNOWN_EVENT_TYPES).toContain("work_completed");
+      expect(KNOWN_EVENT_TYPES).toContain("work_blocked");
+      expect(KNOWN_EVENT_TYPES).toContain("work_created");
+      expect(KNOWN_EVENT_TYPES).toContain("project_registered");
+      expect(KNOWN_EVENT_TYPES).toContain("project_updated");
+      expect(KNOWN_EVENT_TYPES).toContain("heartbeat_received");
+      expect(KNOWN_EVENT_TYPES).toContain("stale_locks_released");
+    });
+
+    it("EventType is string (free-form, not constrained)", () => {
+      const customType: EventType = "heartbeat_check";
+      expect(typeof customType).toBe("string");
     });
   });
 
