@@ -1,10 +1,12 @@
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { getOverallStatus } from "./status";
 import { listAgents } from "./agent";
 import { listWorkItems } from "./work";
 import { listProjects } from "./project";
 import { observeEvents } from "./events";
+import type { BlackboardAgent } from "./types";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -73,6 +75,55 @@ export function createServer(
           const limit = limitStr ? parseInt(limitStr, 10) : undefined;
           const events = observeEvents(db, { since, type, limit });
           return jsonResponse({ count: events.length, items: events });
+        }
+
+        // Agent log endpoint
+        const logMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/log$/);
+        if (logMatch) {
+          const sessionId = decodeURIComponent(logMatch[1]);
+
+          // Look up agent to find log path in metadata
+          const agent = db
+            .query("SELECT * FROM agents WHERE session_id = ?")
+            .get(sessionId) as BlackboardAgent | null;
+
+          if (!agent) {
+            return jsonResponse({ error: "Agent not found" }, 404);
+          }
+
+          let logPath: string | null = null;
+          if (agent.metadata) {
+            try {
+              const meta = JSON.parse(agent.metadata);
+              logPath = meta.logPath ?? null;
+            } catch {}
+          }
+
+          if (!logPath || !existsSync(logPath)) {
+            return jsonResponse({ error: "No log file available", logPath }, 404);
+          }
+
+          const tailParam = url.searchParams.get("tail");
+          const content = readFileSync(logPath, "utf-8");
+
+          if (tailParam) {
+            const n = parseInt(tailParam, 10);
+            const lines = content.split("\n");
+            const tailed = lines.slice(-n).join("\n");
+            return new Response(tailed, {
+              headers: { "Content-Type": "text/plain; charset=utf-8", ...CORS_HEADERS },
+            });
+          }
+
+          const size = statSync(logPath).size;
+          return new Response(content, {
+            headers: {
+              "Content-Type": "text/plain; charset=utf-8",
+              "X-Log-Size": String(size),
+              "X-Agent-Status": agent.status,
+              ...CORS_HEADERS,
+            },
+          });
         }
 
         // SSE endpoint for live event streaming

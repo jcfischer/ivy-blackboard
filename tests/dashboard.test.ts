@@ -39,7 +39,7 @@ describe("dashboard HTML", () => {
     const html = await res.text();
 
     expect(html).toContain("Blackboard Dashboard");
-    expect(html).toContain("Active Agents");
+    expect(html).toContain("Agents");
     expect(html).toContain("Work Items");
     expect(html).toContain("Recent Events");
     expect(html).toContain("/api/status");

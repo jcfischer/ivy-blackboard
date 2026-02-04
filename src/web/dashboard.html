@@ -66,6 +66,80 @@
     .event-summary { color: #c9d1d9; }
     .refresh-info { color: #484f58; font-size: 11px; text-align: right; }
     .truncate { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Agent row clickable */
+    tr.agent-row { cursor: pointer; transition: background 0.15s; }
+    tr.agent-row:hover { background: #1c2128; }
+    tr.agent-row.selected { background: #1c2128; border-left: 2px solid #58a6ff; }
+    tr.agent-row.has-log td:first-child::before {
+      content: '';
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #58a6ff;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    /* Log viewer panel */
+    .log-panel {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      margin-top: 16px;
+      display: none;
+    }
+    .log-panel.visible { display: block; }
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid #21262d;
+      background: #161b22;
+      border-radius: 6px 6px 0 0;
+    }
+    .log-header h3 {
+      color: #58a6ff;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .log-close {
+      background: none;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: inherit;
+    }
+    .log-close:hover { color: #c9d1d9; border-color: #484f58; }
+    .log-content {
+      padding: 12px 16px;
+      max-height: 500px;
+      overflow-y: auto;
+      font-size: 11px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #8b949e;
+    }
+    .log-content .stderr { color: #f85149; }
+    .log-streaming {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #7ee787;
+      margin-left: 8px;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .log-no-content { color: #484f58; font-style: italic; }
   </style>
 </head>
 <body>
@@ -86,8 +160,20 @@
 
   <div class="grid">
     <div class="card">
-      <h2>Active Agents</h2>
+      <h2>Agents</h2>
       <div id="agents-container"><span class="empty">Loading...</span></div>
+      <div class="log-panel" id="log-panel">
+        <div class="log-header">
+          <h3>
+            Agent Log: <span id="log-agent-name">--</span>
+            <span id="log-streaming-indicator" class="log-streaming" style="display:none;"></span>
+          </h3>
+          <button class="log-close" onclick="closeLogPanel()">Close</button>
+        </div>
+        <div class="log-content" id="log-content">
+          <span class="log-no-content">Loading log...</span>
+        </div>
+      </div>
     </div>
     <div class="card">
       <h2>Work Items</h2>
@@ -126,6 +212,10 @@
       return str.length > len ? str.slice(0, len) + '...' : str;
     }
 
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
     async function fetchStatus() {
       try {
         const res = await fetch(API + '/api/status');
@@ -150,20 +240,46 @@
       }
     }
 
+    // ─── Agent list with log viewer ─────────────────────────────────
+
+    let currentAgents = [];
+    let selectedAgentId = null;
+    let logPollInterval = null;
+
+    function hasLogMetadata(agent) {
+      if (!agent.metadata) return false;
+      try {
+        const meta = JSON.parse(agent.metadata);
+        return !!meta.logPath;
+      } catch { return false; }
+    }
+
     async function fetchAgents() {
       try {
-        const res = await fetch(API + '/api/agents');
+        const res = await fetch(API + '/api/agents?all=true');
         const data = await res.json();
         const el = document.getElementById('agents-container');
+        currentAgents = data.items || [];
 
-        if (!data.items || data.items.length === 0) {
-          el.innerHTML = '<span class="empty">No active agents.</span>';
+        // Filter: show dispatch agents (have metadata with logPath) and active/idle agents
+        const dispatchAgents = currentAgents.filter(a =>
+          hasLogMetadata(a) || a.status === 'active' || a.status === 'idle'
+        );
+
+        if (dispatchAgents.length === 0) {
+          el.innerHTML = '<span class="empty">No agents.</span>';
           return;
         }
 
         let html = '<table><tr><th>Name</th><th>Status</th><th>Project</th><th>Work</th><th>Last Seen</th></tr>';
-        for (const a of data.items) {
-          html += `<tr>
+        for (const a of dispatchAgents) {
+          const isSelected = a.session_id === selectedAgentId;
+          const hasLog = hasLogMetadata(a);
+          const classes = ['agent-row'];
+          if (isSelected) classes.push('selected');
+          if (hasLog) classes.push('has-log');
+
+          html += `<tr class="${classes.join(' ')}" onclick="selectAgent('${a.session_id}')" title="${hasLog ? 'Click to view log' : 'No log available'}">
             <td>${a.agent_name}</td>
             <td>${badge(a.status)}</td>
             <td>${a.project || '--'}</td>
@@ -175,6 +291,92 @@
         el.innerHTML = html;
       } catch (e) {
         document.getElementById('agents-container').innerHTML = '<span class="empty">Error loading agents.</span>';
+      }
+    }
+
+    function selectAgent(sessionId) {
+      if (selectedAgentId === sessionId) {
+        closeLogPanel();
+        return;
+      }
+
+      selectedAgentId = sessionId;
+      const agent = currentAgents.find(a => a.session_id === sessionId);
+      if (!agent) return;
+
+      document.getElementById('log-agent-name').textContent =
+        `${agent.agent_name} (${truncate(agent.session_id, 12)})`;
+      document.getElementById('log-content').innerHTML = '<span class="log-no-content">Loading log...</span>';
+      document.getElementById('log-panel').classList.add('visible');
+
+      // Show streaming indicator if agent is active
+      const isActive = agent.status === 'active' || agent.status === 'idle';
+      document.getElementById('log-streaming-indicator').style.display = isActive ? 'inline-block' : 'none';
+
+      // Fetch log immediately
+      fetchAgentLog(sessionId);
+
+      // Poll for updates if agent is active
+      if (logPollInterval) clearInterval(logPollInterval);
+      if (isActive) {
+        logPollInterval = setInterval(() => fetchAgentLog(sessionId), 2000);
+      }
+
+      // Re-render agent list to show selection
+      fetchAgents();
+    }
+
+    function closeLogPanel() {
+      selectedAgentId = null;
+      document.getElementById('log-panel').classList.remove('visible');
+      if (logPollInterval) {
+        clearInterval(logPollInterval);
+        logPollInterval = null;
+      }
+      fetchAgents();
+    }
+
+    async function fetchAgentLog(sessionId) {
+      try {
+        const res = await fetch(API + '/api/agents/' + encodeURIComponent(sessionId) + '/log');
+        const el = document.getElementById('log-content');
+
+        if (!res.ok) {
+          el.innerHTML = '<span class="log-no-content">No log file available for this agent.</span>';
+          return;
+        }
+
+        const text = await res.text();
+        const agentStatus = res.headers.get('X-Agent-Status');
+
+        // Format the log content with stderr highlighting
+        const formatted = escapeHtml(text)
+          .split('\n')
+          .map(line => {
+            if (line.startsWith('[stderr]')) {
+              return `<span class="stderr">${line}</span>`;
+            }
+            return line;
+          })
+          .join('\n');
+
+        el.innerHTML = formatted || '<span class="log-no-content">Log file is empty.</span>';
+
+        // Auto-scroll to bottom
+        el.scrollTop = el.scrollHeight;
+
+        // Update streaming indicator
+        const isActive = agentStatus === 'active' || agentStatus === 'idle';
+        document.getElementById('log-streaming-indicator').style.display = isActive ? 'inline-block' : 'none';
+
+        // Stop polling if agent is no longer active
+        if (!isActive && logPollInterval) {
+          clearInterval(logPollInterval);
+          logPollInterval = null;
+        }
+      } catch (e) {
+        document.getElementById('log-content').innerHTML =
+          '<span class="log-no-content">Error fetching log.</span>';
       }
     }
 
