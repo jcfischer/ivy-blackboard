@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { CommandContext } from "../context";
-import { createWorkItem, claimWorkItem, createAndClaimWorkItem, releaseWorkItem, completeWorkItem, blockWorkItem, unblockWorkItem, listWorkItems, getWorkItemStatus } from "../work";
+import { createWorkItem, claimWorkItem, createAndClaimWorkItem, releaseWorkItem, completeWorkItem, blockWorkItem, unblockWorkItem, listWorkItems, getWorkItemStatus, deleteWorkItem, updateWorkItemMetadata, appendWorkItemEvent } from "../work";
 import { formatJson, formatTable, formatRelativeTime } from "../output";
 import { withErrorHandling } from "../errors";
 
@@ -193,6 +193,27 @@ export function registerWorkCommands(
     );
 
   work
+    .command("delete")
+    .description("Delete a work item")
+    .argument("<item-id>", "Work item ID")
+    .option("--force", "Force delete even if claimed", false)
+    .action(
+      withErrorHandling((itemId, opts) => {
+        const ctx = getContext();
+        const result = deleteWorkItem(ctx.db, itemId, opts.force);
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Deleted work item: ${result.item_id}`);
+          console.log(`Title:  ${result.title}`);
+          console.log(`Was:    ${result.previous_status}`);
+          if (result.was_claimed_by) console.log(`Claimed by: ${result.was_claimed_by}`);
+        }
+      }, () => getContext().options.json)
+    );
+
+  work
     .command("list")
     .description("List work items")
     .option("--all", "Show all statuses (default: available only)")
@@ -258,6 +279,69 @@ export function registerWorkCommands(
               console.log(`  ${e.timestamp}  ${e.event_type}  ${e.summary}`);
             }
           }
+        }
+      }, () => getContext().options.json)
+    );
+
+  work
+    .command("update-metadata")
+    .description("Merge metadata keys into a work item")
+    .requiredOption("--id <id>", "Work item ID")
+    .requiredOption("--metadata <json>", "JSON object of keys to merge")
+    .action(
+      withErrorHandling((opts) => {
+        const ctx = getContext();
+        let updates: Record<string, unknown>;
+        try {
+          updates = JSON.parse(opts.metadata);
+        } catch {
+          throw new Error(`Invalid JSON: ${opts.metadata}`);
+        }
+
+        const result = updateWorkItemMetadata(ctx.db, opts.id, updates);
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Updated metadata for ${result.item_id}`);
+          console.log(`Metadata: ${JSON.stringify(result.metadata, null, 2)}`);
+        }
+      }, () => getContext().options.json)
+    );
+
+  work
+    .command("append-event")
+    .description("Append a structured event to a work item")
+    .requiredOption("--id <id>", "Work item ID")
+    .requiredOption("--event-type <type>", "Event type")
+    .requiredOption("--summary <text>", "Event summary")
+    .option("--actor <actor-id>", "Actor ID")
+    .option("--metadata <json>", "Event metadata as JSON")
+    .action(
+      withErrorHandling((opts) => {
+        const ctx = getContext();
+        let metadata: Record<string, unknown> | undefined;
+        if (opts.metadata) {
+          try {
+            metadata = JSON.parse(opts.metadata);
+          } catch {
+            throw new Error(`Invalid JSON: ${opts.metadata}`);
+          }
+        }
+
+        const result = appendWorkItemEvent(ctx.db, opts.id, {
+          event_type: opts.eventType,
+          summary: opts.summary,
+          actor_id: opts.actor,
+          metadata,
+        });
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Appended ${result.event_type} event to ${result.item_id}`);
+          console.log(`Event ID: ${result.event_id}`);
+          console.log(`At: ${result.timestamp}`);
         }
       }, () => getContext().options.json)
     );

@@ -48,6 +48,34 @@ describe("dashboard HTML", () => {
     expect(html).toContain("/api/events");
   });
 
+  test("dashboard has work tabs for active and history views", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/`);
+    const html = await res.text();
+
+    expect(html).toContain("work-tabs");
+    expect(html).toContain("switchWorkTab('active')");
+    expect(html).toContain("switchWorkTab('history')");
+    expect(html).toContain("Active");
+    expect(html).toContain("History");
+  });
+
+  test("dashboard has work detail panel", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/`);
+    const html = await res.text();
+
+    expect(html).toContain("work-detail-panel");
+    expect(html).toContain("work-detail-body");
+    expect(html).toContain("selectWork");
+    expect(html).toContain("closeWorkDetail");
+    expect(html).toContain("/api/work/");
+  });
+
   test("dashboard HTML includes auto-refresh", async () => {
     const { createServer } = await import("../src/server");
     server = createServer(db, dbPath, 0);

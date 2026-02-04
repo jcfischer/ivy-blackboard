@@ -6,6 +6,8 @@ import { openDatabase, closeDatabase } from "../src/db";
 import { resetConfigCache } from "../src/config";
 import type { Database } from "bun:sqlite";
 
+const PROJECT_ROOT = join(import.meta.dir, "..");
+
 let db: Database;
 let dbPath: string;
 let tmpDir: string;
@@ -295,7 +297,7 @@ describe("CLI agent heartbeat", () => {
     // Register first
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "HBAgent"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const regText = await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -304,7 +306,7 @@ describe("CLI agent heartbeat", () => {
     // Send heartbeat
     const hbProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "heartbeat", "--session", sessionId, "--progress", "Testing"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const hbText = await new Response(hbProc.stdout).text();
     await hbProc.exited;
@@ -403,14 +405,14 @@ describe("CLI agent list", () => {
     // Register an agent first
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "ListAgent"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     await new Response(regProc.stdout).text();
     await regProc.exited;
 
     const listProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "list"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const listText = await new Response(listProc.stdout).text();
     await listProc.exited;
@@ -425,7 +427,7 @@ describe("CLI agent list", () => {
   test("list --json returns empty when no agents", async () => {
     const listProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "list"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const listText = await new Response(listProc.stdout).text();
     await listProc.exited;
@@ -442,7 +444,7 @@ describe("CLI agent register", () => {
   test("register --name outputs session details as JSON", async () => {
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "TestAgent"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -458,7 +460,7 @@ describe("CLI agent register", () => {
     // First register
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "TestAgent"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const regText = await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -467,7 +469,7 @@ describe("CLI agent register", () => {
     // Then deregister
     const deregProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "deregister", "--session", sessionId],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const deregText = await new Response(deregProc.stdout).text();
     await deregProc.exited;

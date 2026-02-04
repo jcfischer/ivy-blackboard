@@ -3,14 +3,14 @@ import type { Server } from "bun";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { getOverallStatus } from "./status";
 import { listAgents } from "./agent";
-import { listWorkItems, getWorkItemStatus } from "./work";
+import { listWorkItems, getWorkItemStatus, deleteWorkItem, updateWorkItemMetadata, appendWorkItemEvent } from "./work";
 import { listProjects, getProjectDetail } from "./project";
 import { observeEvents } from "./events";
 import type { BlackboardAgent } from "./types";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
@@ -39,7 +39,7 @@ export function createServer(
 ): Server {
   return Bun.serve({
     port,
-    fetch(req) {
+    async fetch(req) {
       const url = new URL(req.url);
 
       // CORS preflight
@@ -68,12 +68,55 @@ export function createServer(
           return jsonResponse({ count: items.length, items });
         }
 
-        // Work item detail endpoint
+        // Work item detail / delete endpoint
         const workMatch = url.pathname.match(/^\/api\/work\/([^/]+)$/);
         if (workMatch) {
           const itemId = decodeURIComponent(workMatch[1]);
+
+          if (req.method === "DELETE") {
+            const force = url.searchParams.get("force") === "true";
+            const result = deleteWorkItem(db, itemId, force);
+            return jsonResponse(result);
+          }
+
           const detail = getWorkItemStatus(db, itemId);
-          return jsonResponse(detail);
+
+          // Enrich with agent name if claimed
+          let agent_name: string | null = null;
+          if (detail.item.claimed_by) {
+            const agent = db
+              .query("SELECT agent_name FROM agents WHERE session_id = ?")
+              .get(detail.item.claimed_by) as { agent_name: string } | null;
+            agent_name = agent?.agent_name ?? null;
+          }
+
+          return jsonResponse({
+            ...detail,
+            agent_name,
+          });
+        }
+
+        // Work item metadata update endpoint
+        const metadataMatch = url.pathname.match(/^\/api\/work\/([^/]+)\/metadata$/);
+        if (metadataMatch && req.method === "PATCH") {
+          const itemId = decodeURIComponent(metadataMatch[1]);
+          const body = await req.json() as Record<string, unknown>;
+          const result = updateWorkItemMetadata(db, itemId, body);
+          return jsonResponse(result);
+        }
+
+        // Work item event append endpoint
+        const eventMatch = url.pathname.match(/^\/api\/work\/([^/]+)\/events$/);
+        if (eventMatch && req.method === "POST") {
+          const itemId = decodeURIComponent(eventMatch[1]);
+          const body = await req.json() as {
+            event_type: string;
+            summary: string;
+            actor_id?: string;
+            metadata?: Record<string, unknown>;
+          };
+          const result = appendWorkItemEvent(db, itemId, body);
+          return jsonResponse(result);
         }
 
         if (url.pathname === "/api/events") {

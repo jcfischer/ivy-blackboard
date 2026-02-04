@@ -211,4 +211,209 @@ describe("createServer", () => {
     expect(json.ok).toBe(true);
     expect(json.items).toEqual([]);
   });
+
+  test("GET /api/work/:id returns work item detail with history", async () => {
+    const { createServer } = await import("../src/server");
+    const { createWorkItem } = await import("../src/work");
+    createWorkItem(db, { id: "detail-w1", title: "Detail Task", description: "Full description here" });
+
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/work/detail-w1`);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.item.item_id).toBe("detail-w1");
+    expect(json.item.title).toBe("Detail Task");
+    expect(json.item.description).toBe("Full description here");
+    expect(json.history).toBeArray();
+    expect(json.history.length).toBeGreaterThan(0);
+    expect(json.history[0].event_type).toBe("work_created");
+  });
+
+  test("GET /api/work/:id returns agent_name when claimed", async () => {
+    const { createServer } = await import("../src/server");
+    const { registerAgent } = await import("../src/agent");
+    const { createWorkItem, claimWorkItem } = await import("../src/work");
+
+    const agent = registerAgent(db, { name: "ClaimAgent" });
+    createWorkItem(db, { id: "claim-w1", title: "Claimed Task" });
+    claimWorkItem(db, "claim-w1", agent.session_id);
+
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/work/claim-w1`);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.item.status).toBe("claimed");
+    expect(json.item.claimed_by).toBe(agent.session_id);
+    expect(json.agent_name).toBe("ClaimAgent");
+  });
+
+  test("GET /api/work/:id returns 400 for missing item", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/work/nonexistent`);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+  });
+
+  test("DELETE /api/work/:id deletes available work item", async () => {
+    const { createServer } = await import("../src/server");
+    const { createWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "api-del-1", title: "API Delete" });
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/api/work/api-del-1`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.deleted).toBe(true);
+    expect(json.item_id).toBe("api-del-1");
+  });
+
+  test("DELETE /api/work/:id refuses claimed item without force", async () => {
+    const { createServer } = await import("../src/server");
+    const { createWorkItem, claimWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "api-del-2", title: "API Claimed" });
+    const agent = registerAgent(db, { name: "Agent" });
+    claimWorkItem(db, "api-del-2", agent.session_id);
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/api/work/api-del-2`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.error).toContain("claimed");
+  });
+
+  test("DELETE /api/work/:id with force deletes claimed item", async () => {
+    const { createServer } = await import("../src/server");
+    const { createWorkItem, claimWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "api-del-3", title: "API Force" });
+    const agent = registerAgent(db, { name: "Agent" });
+    claimWorkItem(db, "api-del-3", agent.session_id);
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/api/work/api-del-3?force=true`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.deleted).toBe(true);
+  });
+
+  test("DELETE /api/work/:id returns 400 for missing item", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/api/work/nonexistent`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+  });
+
+  test("PATCH /api/work/:id/metadata merges metadata", async () => {
+    const { createServer } = await import("../src/server");
+    const { createWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "api-meta-1", title: "API Metadata", metadata: '{"existing": true}' });
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/api/work/api-meta-1/metadata`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approved: true, reviewer: "alice" }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.updated).toBe(true);
+    expect(json.metadata).toEqual({ existing: true, approved: true, reviewer: "alice" });
+  });
+
+  test("PATCH /api/work/:id/metadata returns 400 for missing item", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/api/work/nonexistent/metadata`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "value" }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+  });
+
+  test("POST /api/work/:id/events appends event", async () => {
+    const { createServer } = await import("../src/server");
+    const { createWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "api-evt-1", title: "API Event" });
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/api/work/api-evt-1/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event_type: "comment_received",
+        summary: "New comment from bob",
+        metadata: { author: "bob" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.ok).toBe(true);
+    expect(json.event_type).toBe("comment_received");
+    expect(json.event_id).toBeGreaterThan(0);
+  });
+
+  test("POST /api/work/:id/events returns 400 for invalid event_type", async () => {
+    const { createServer } = await import("../src/server");
+    const { createWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "api-evt-2", title: "API Event Bad" });
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/api/work/api-evt-2/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event_type: "invalid_type",
+        summary: "Should fail",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.error).toContain("invalid_type");
+  });
+
+  test("POST /api/work/:id/events returns 400 for missing item", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/api/work/nonexistent/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event_type: "comment_received",
+        summary: "Should fail",
+      }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+  });
 });

@@ -50,8 +50,8 @@ describe("types", () => {
   });
 
   describe("EventType", () => {
-    it("KNOWN_EVENT_TYPES lists 13 known blackboard event types", () => {
-      expect(KNOWN_EVENT_TYPES).toHaveLength(13);
+    it("KNOWN_EVENT_TYPES lists 18 known blackboard event types", () => {
+      expect(KNOWN_EVENT_TYPES).toHaveLength(18);
       expect(KNOWN_EVENT_TYPES).toContain("agent_registered");
       expect(KNOWN_EVENT_TYPES).toContain("agent_deregistered");
       expect(KNOWN_EVENT_TYPES).toContain("agent_stale");
@@ -61,6 +61,11 @@ describe("types", () => {
       expect(KNOWN_EVENT_TYPES).toContain("work_completed");
       expect(KNOWN_EVENT_TYPES).toContain("work_blocked");
       expect(KNOWN_EVENT_TYPES).toContain("work_created");
+      expect(KNOWN_EVENT_TYPES).toContain("work_deleted");
+      expect(KNOWN_EVENT_TYPES).toContain("metadata_updated");
+      expect(KNOWN_EVENT_TYPES).toContain("comment_received");
+      expect(KNOWN_EVENT_TYPES).toContain("work_approved");
+      expect(KNOWN_EVENT_TYPES).toContain("work_rejected");
       expect(KNOWN_EVENT_TYPES).toContain("project_registered");
       expect(KNOWN_EVENT_TYPES).toContain("project_updated");
       expect(KNOWN_EVENT_TYPES).toContain("heartbeat_received");

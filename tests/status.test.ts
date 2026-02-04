@@ -6,6 +6,8 @@ import { openDatabase, closeDatabase } from "../src/db";
 import { resetConfigCache } from "../src/config";
 import type { Database } from "bun:sqlite";
 
+const PROJECT_ROOT = join(import.meta.dir, "..");
+
 let db: Database;
 let dbPath: string;
 let tmpDir: string;
@@ -138,7 +140,7 @@ describe("CLI status", () => {
   test("status --json returns overall status", async () => {
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "status"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -153,7 +155,7 @@ describe("CLI status", () => {
   test("status human output includes database size", async () => {
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "status"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;

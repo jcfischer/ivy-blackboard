@@ -6,6 +6,8 @@ import { openDatabase, closeDatabase } from "../src/db";
 import { resetConfigCache } from "../src/config";
 import type { Database } from "bun:sqlite";
 
+const PROJECT_ROOT = join(import.meta.dir, "..");
+
 let db: Database;
 let dbPath: string;
 let tmpDir: string;
@@ -385,7 +387,7 @@ describe("CLI work claim", () => {
     // Register agent first
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "CLIAgent"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const regText = await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -395,7 +397,7 @@ describe("CLI work claim", () => {
     const claimProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "cli-task", "--title", "CLI Task", "--session", sessionId, "--priority", "P1"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const claimText = await new Response(claimProc.stdout).text();
     await claimProc.exited;
@@ -412,7 +414,7 @@ describe("CLI work claim", () => {
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "no-claim", "--title", "Unclaimed"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -432,17 +434,17 @@ describe("CLI work list", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "list-1", "--title", "First"],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "list-2", "--title", "Second", "--priority", "P1"],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "list"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -457,7 +459,7 @@ describe("CLI work list", () => {
     // Create and claim one
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "ListAgent"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const regText = await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -466,17 +468,17 @@ describe("CLI work list", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "ls-1", "--title", "Available"],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "ls-2", "--title", "Claimed", "--session", sid],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "list", "--status", "claimed"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -724,7 +726,7 @@ describe("CLI work release", () => {
   test("release outputs JSON", async () => {
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "CLIReleaser"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const regText = await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -733,13 +735,13 @@ describe("CLI work release", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "cli-rel", "--title", "CLI Release", "--session", sid],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "release",
        "--id", "cli-rel", "--session", sid],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -755,7 +757,7 @@ describe("CLI work complete", () => {
   test("complete outputs JSON", async () => {
     const regProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "CLICompleter"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const regText = await new Response(regProc.stdout).text();
     await regProc.exited;
@@ -764,13 +766,13 @@ describe("CLI work complete", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "cli-comp", "--title", "CLI Complete", "--session", sid],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "complete",
        "--id", "cli-comp", "--session", sid],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
@@ -787,13 +789,13 @@ describe("CLI work block/unblock", () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "cli-blk", "--title", "CLI Block"],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const blockProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "block",
        "--id", "cli-blk", "--blocked-by", "other-item"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const blockText = await new Response(blockProc.stdout).text();
     await blockProc.exited;
@@ -806,7 +808,7 @@ describe("CLI work block/unblock", () => {
     const unblockProc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "unblock",
        "--id", "cli-blk"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const unblockText = await new Response(unblockProc.stdout).text();
     await unblockProc.exited;
@@ -818,17 +820,418 @@ describe("CLI work block/unblock", () => {
   });
 });
 
+// deleteWorkItem unit tests
+describe("deleteWorkItem", () => {
+  test("deletes an available work item", async () => {
+    const { createWorkItem, deleteWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "del-1", title: "Deletable" });
+    const result = deleteWorkItem(db, "del-1");
+
+    expect(result.item_id).toBe("del-1");
+    expect(result.deleted).toBe(true);
+    expect(result.title).toBe("Deletable");
+    expect(result.previous_status).toBe("available");
+    expect(result.was_claimed_by).toBeNull();
+
+    const row = db.query("SELECT * FROM work_items WHERE item_id = ?").get("del-1");
+    expect(row).toBeNull();
+  });
+
+  test("deletes a completed work item without --force", async () => {
+    const { createWorkItem, claimWorkItem, completeWorkItem, deleteWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "del-done", title: "Completed" });
+    const agent = registerAgent(db, { name: "Agent" });
+    claimWorkItem(db, "del-done", agent.session_id);
+    completeWorkItem(db, "del-done", agent.session_id);
+
+    const result = deleteWorkItem(db, "del-done");
+    expect(result.deleted).toBe(true);
+    expect(result.previous_status).toBe("completed");
+
+    const row = db.query("SELECT * FROM work_items WHERE item_id = ?").get("del-done");
+    expect(row).toBeNull();
+  });
+
+  test("refuses to delete a claimed item without --force", async () => {
+    const { createWorkItem, claimWorkItem, deleteWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "del-claimed", title: "Claimed" });
+    const agent = registerAgent(db, { name: "Agent" });
+    claimWorkItem(db, "del-claimed", agent.session_id);
+
+    expect(() => deleteWorkItem(db, "del-claimed")).toThrow("claimed");
+
+    // Item should still exist
+    const row = db.query("SELECT * FROM work_items WHERE item_id = ?").get("del-claimed");
+    expect(row).not.toBeNull();
+  });
+
+  test("deletes a claimed item with --force", async () => {
+    const { createWorkItem, claimWorkItem, deleteWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "del-force", title: "Force delete" });
+    const agent = registerAgent(db, { name: "Agent" });
+    claimWorkItem(db, "del-force", agent.session_id);
+
+    const result = deleteWorkItem(db, "del-force", true);
+    expect(result.deleted).toBe(true);
+    expect(result.previous_status).toBe("claimed");
+    expect(result.was_claimed_by).toBe(agent.session_id);
+
+    const row = db.query("SELECT * FROM work_items WHERE item_id = ?").get("del-force");
+    expect(row).toBeNull();
+  });
+
+  test("deletes a blocked item without --force", async () => {
+    const { createWorkItem, blockWorkItem, deleteWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "del-blocked", title: "Blocked" });
+    blockWorkItem(db, "del-blocked", { blockedBy: "other" });
+
+    const result = deleteWorkItem(db, "del-blocked");
+    expect(result.deleted).toBe(true);
+    expect(result.previous_status).toBe("blocked");
+  });
+
+  test("throws on non-existent item", async () => {
+    const { deleteWorkItem } = await import("../src/work");
+    expect(() => deleteWorkItem(db, "ghost")).toThrow("ghost");
+  });
+
+  test("emits work_deleted event", async () => {
+    const { createWorkItem, deleteWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "del-evt", title: "Event delete" });
+    deleteWorkItem(db, "del-evt");
+
+    const event = db.query(
+      "SELECT * FROM events WHERE event_type = 'work_deleted' AND target_id = ?"
+    ).get("del-evt") as any;
+
+    expect(event).not.toBeNull();
+    expect(event.target_type).toBe("work_item");
+    expect(event.summary).toContain("Event delete");
+    expect(event.summary).toContain("deleted");
+  });
+
+  test("cleans up heartbeat references", async () => {
+    const { createWorkItem, claimWorkItem, deleteWorkItem } = await import("../src/work");
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+
+    createWorkItem(db, { id: "del-hb", title: "Heartbeat cleanup" });
+    const agent = registerAgent(db, { name: "Agent" });
+    claimWorkItem(db, "del-hb", agent.session_id);
+
+    // Create a heartbeat referencing this work item
+    sendHeartbeat(db, { sessionId: agent.session_id, workItemId: "del-hb", progress: "working" });
+
+    const hbBefore = db.query(
+      "SELECT * FROM heartbeats WHERE work_item_id = ?"
+    ).get("del-hb") as any;
+    expect(hbBefore).not.toBeNull();
+
+    deleteWorkItem(db, "del-hb", true);
+
+    // Heartbeat should have work_item_id nulled, not deleted
+    const hbAfter = db.query(
+      "SELECT * FROM heartbeats WHERE id = ?"
+    ).get(hbBefore.id) as any;
+    expect(hbAfter).not.toBeNull();
+    expect(hbAfter.work_item_id).toBeNull();
+  });
+});
+
+// CLI E2E: work delete
+describe("CLI work delete", () => {
+  test("delete outputs JSON for available item", async () => {
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "cli-del-1", "--title", "CLI Delete"],
+      { cwd: PROJECT_ROOT }
+    );
+
+    const proc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "delete", "cli-del-1"],
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(true);
+    expect(json.item_id).toBe("cli-del-1");
+    expect(json.deleted).toBe(true);
+    expect(json.previous_status).toBe("available");
+  });
+
+  test("delete refuses claimed item without --force", async () => {
+    const regProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "CLIDelAgent"],
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
+    );
+    const regText = await new Response(regProc.stdout).text();
+    await regProc.exited;
+    const sid = JSON.parse(regText).session_id;
+
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "cli-del-2", "--title", "Claimed Delete", "--session", sid],
+      { cwd: PROJECT_ROOT }
+    );
+
+    const proc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "delete", "cli-del-2"],
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(false);
+    expect(json.error).toContain("claimed");
+  });
+
+  test("delete with --force deletes claimed item", async () => {
+    const regProc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "agent", "register", "--name", "CLIForceAgent"],
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
+    );
+    const regText = await new Response(regProc.stdout).text();
+    await regProc.exited;
+    const sid = JSON.parse(regText).session_id;
+
+    Bun.spawnSync(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
+       "--id", "cli-del-3", "--title", "Force Delete", "--session", sid],
+      { cwd: PROJECT_ROOT }
+    );
+
+    const proc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "delete", "cli-del-3", "--force"],
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(true);
+    expect(json.deleted).toBe(true);
+    expect(json.was_claimed_by).toBe(sid);
+  });
+
+  test("delete returns error for non-existent item", async () => {
+    const proc = Bun.spawn(
+      ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "delete", "nonexistent"],
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
+    );
+    const text = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const json = JSON.parse(text);
+    expect(json.ok).toBe(false);
+    expect(json.error).toContain("nonexistent");
+  });
+});
+
+// updateWorkItemMetadata
+describe("updateWorkItemMetadata", () => {
+  test("merges new keys into empty metadata", async () => {
+    const { createWorkItem, updateWorkItemMetadata } = await import("../src/work");
+    createWorkItem(db, { id: "meta-1", title: "No metadata" });
+
+    const result = updateWorkItemMetadata(db, "meta-1", { human_review_required: false, auto_push: true });
+    expect(result.item_id).toBe("meta-1");
+    expect(result.updated).toBe(true);
+    expect(result.metadata).toEqual({ human_review_required: false, auto_push: true });
+
+    const row = db.query("SELECT metadata FROM work_items WHERE item_id = ?").get("meta-1") as any;
+    expect(JSON.parse(row.metadata)).toEqual({ human_review_required: false, auto_push: true });
+  });
+
+  test("merges new keys into existing metadata without losing old keys", async () => {
+    const { createWorkItem, updateWorkItemMetadata } = await import("../src/work");
+    createWorkItem(db, { id: "meta-2", title: "With metadata", metadata: '{"labels": ["bug"], "priority": "high"}' });
+
+    const result = updateWorkItemMetadata(db, "meta-2", { approved_by: "jcfischer", auto_push: true });
+    expect(result.metadata).toEqual({
+      labels: ["bug"],
+      priority: "high",
+      approved_by: "jcfischer",
+      auto_push: true,
+    });
+  });
+
+  test("overrides existing keys with new values", async () => {
+    const { createWorkItem, updateWorkItemMetadata } = await import("../src/work");
+    createWorkItem(db, { id: "meta-3", title: "Override", metadata: '{"human_review_required": true}' });
+
+    const result = updateWorkItemMetadata(db, "meta-3", { human_review_required: false });
+    expect(result.metadata.human_review_required).toBe(false);
+  });
+
+  test("emits metadata_updated event", async () => {
+    const { createWorkItem, updateWorkItemMetadata } = await import("../src/work");
+    createWorkItem(db, { id: "meta-evt", title: "Event test" });
+    updateWorkItemMetadata(db, "meta-evt", { key1: "value1" });
+
+    const event = db.query(
+      "SELECT * FROM events WHERE event_type = 'metadata_updated' AND target_id = ?"
+    ).get("meta-evt") as any;
+    expect(event).not.toBeNull();
+    expect(event.target_type).toBe("work_item");
+    expect(event.summary).toContain("key1");
+    expect(JSON.parse(event.metadata)).toEqual({ keys_updated: ["key1"] });
+  });
+
+  test("throws on non-existent item", async () => {
+    const { updateWorkItemMetadata } = await import("../src/work");
+    expect(() => updateWorkItemMetadata(db, "ghost", { key: "val" })).toThrow("ghost");
+  });
+
+  test("can be called multiple times accumulating metadata", async () => {
+    const { createWorkItem, updateWorkItemMetadata } = await import("../src/work");
+    createWorkItem(db, { id: "meta-accum", title: "Accumulate" });
+
+    updateWorkItemMetadata(db, "meta-accum", { step1: true });
+    updateWorkItemMetadata(db, "meta-accum", { step2: true });
+    const result = updateWorkItemMetadata(db, "meta-accum", { step3: true });
+
+    expect(result.metadata).toEqual({ step1: true, step2: true, step3: true });
+  });
+});
+
+// appendWorkItemEvent
+describe("appendWorkItemEvent", () => {
+  test("appends a comment_received event", async () => {
+    const { createWorkItem, appendWorkItemEvent } = await import("../src/work");
+    createWorkItem(db, { id: "evt-1", title: "Event target" });
+
+    const result = appendWorkItemEvent(db, "evt-1", {
+      event_type: "comment_received",
+      summary: "New comment from alice on issue #5",
+      metadata: { author: "alice", comment_body: "Looks good!" },
+    });
+
+    expect(result.item_id).toBe("evt-1");
+    expect(result.event_type).toBe("comment_received");
+    expect(result.event_id).toBeGreaterThan(0);
+    expect(result.timestamp).toBeTruthy();
+
+    const event = db.query("SELECT * FROM events WHERE id = ?").get(result.event_id) as any;
+    expect(event.event_type).toBe("comment_received");
+    expect(event.target_id).toBe("evt-1");
+    expect(event.target_type).toBe("work_item");
+    expect(event.summary).toContain("alice");
+    expect(JSON.parse(event.metadata)).toEqual({ author: "alice", comment_body: "Looks good!" });
+  });
+
+  test("appends a work_approved event", async () => {
+    const { createWorkItem, appendWorkItemEvent } = await import("../src/work");
+    createWorkItem(db, { id: "evt-2", title: "Approval target" });
+
+    const result = appendWorkItemEvent(db, "evt-2", {
+      event_type: "work_approved",
+      summary: "Approved by jcfischer",
+      actor_id: "jcfischer",
+    });
+
+    expect(result.event_type).toBe("work_approved");
+
+    const event = db.query("SELECT * FROM events WHERE id = ?").get(result.event_id) as any;
+    expect(event.actor_id).toBe("jcfischer");
+  });
+
+  test("appends a work_rejected event", async () => {
+    const { createWorkItem, appendWorkItemEvent } = await import("../src/work");
+    createWorkItem(db, { id: "evt-3", title: "Rejection target" });
+
+    const result = appendWorkItemEvent(db, "evt-3", {
+      event_type: "work_rejected",
+      summary: "Rejected: needs more tests",
+    });
+
+    expect(result.event_type).toBe("work_rejected");
+  });
+
+  test("allows existing event types like work_blocked", async () => {
+    const { createWorkItem, appendWorkItemEvent } = await import("../src/work");
+    createWorkItem(db, { id: "evt-4", title: "Existing type" });
+
+    const result = appendWorkItemEvent(db, "evt-4", {
+      event_type: "work_blocked",
+      summary: "Blocked by upstream dependency",
+    });
+
+    expect(result.event_type).toBe("work_blocked");
+  });
+
+  test("throws on invalid event_type", async () => {
+    const { createWorkItem, appendWorkItemEvent } = await import("../src/work");
+    createWorkItem(db, { id: "evt-bad", title: "Bad type" });
+
+    expect(() => appendWorkItemEvent(db, "evt-bad", {
+      event_type: "invalid_type",
+      summary: "Should fail",
+    })).toThrow("invalid_type");
+  });
+
+  test("throws on non-existent item", async () => {
+    const { appendWorkItemEvent } = await import("../src/work");
+    expect(() => appendWorkItemEvent(db, "ghost", {
+      event_type: "comment_received",
+      summary: "Should fail",
+    })).toThrow("ghost");
+  });
+
+  test("events appear in getWorkItemStatus history", async () => {
+    const { createWorkItem, appendWorkItemEvent, getWorkItemStatus } = await import("../src/work");
+    createWorkItem(db, { id: "evt-hist", title: "History check" });
+
+    appendWorkItemEvent(db, "evt-hist", {
+      event_type: "comment_received",
+      summary: "First comment",
+    });
+    appendWorkItemEvent(db, "evt-hist", {
+      event_type: "work_approved",
+      summary: "Approved",
+    });
+
+    const detail = getWorkItemStatus(db, "evt-hist");
+    expect(detail.history.length).toBe(3); // work_created + 2 appended
+    expect(detail.history[1].event_type).toBe("comment_received");
+    expect(detail.history[2].event_type).toBe("work_approved");
+  });
+
+  test("works without metadata", async () => {
+    const { createWorkItem, appendWorkItemEvent } = await import("../src/work");
+    createWorkItem(db, { id: "evt-no-meta", title: "No metadata" });
+
+    const result = appendWorkItemEvent(db, "evt-no-meta", {
+      event_type: "comment_received",
+      summary: "Simple event",
+    });
+
+    const event = db.query("SELECT * FROM events WHERE id = ?").get(result.event_id) as any;
+    expect(event.metadata).toBeNull();
+  });
+});
+
 describe("CLI work status", () => {
   test("status outputs JSON detail", async () => {
     Bun.spawnSync(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "claim",
        "--id", "stat-1", "--title", "Status Test"],
-      { cwd: "/Users/fischer/work/ivy-blackboard" }
+      { cwd: PROJECT_ROOT }
     );
 
     const proc = Bun.spawn(
       ["bun", "src/index.ts", "--db", dbPath, "--json", "work", "status", "stat-1"],
-      { cwd: "/Users/fischer/work/ivy-blackboard", stdout: "pipe", stderr: "pipe" }
+      { cwd: PROJECT_ROOT, stdout: "pipe", stderr: "pipe" }
     );
     const text = await new Response(proc.stdout).text();
     await proc.exited;
