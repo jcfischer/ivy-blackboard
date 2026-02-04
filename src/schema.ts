@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = [
   "PRAGMA journal_mode = WAL;",
@@ -69,16 +69,7 @@ CREATE TABLE IF NOT EXISTS heartbeats (
 CREATE TABLE IF NOT EXISTS events (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp     TEXT NOT NULL,
-    event_type    TEXT NOT NULL
-                  CHECK (event_type IN (
-                      'agent_registered', 'agent_deregistered', 'agent_stale',
-                      'agent_recovered',
-                      'work_claimed', 'work_released', 'work_completed',
-                      'work_blocked', 'work_created',
-                      'project_registered', 'project_updated',
-                      'heartbeat_received',
-                      'stale_locks_released'
-                  )),
+    event_type    TEXT NOT NULL,
     actor_id      TEXT,
     target_id     TEXT,
     target_type   TEXT
@@ -116,4 +107,33 @@ CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor_id);
 export const SEED_VERSION_SQL = `
 INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (1, datetime('now'), 'Initial local blackboard schema');
+INSERT OR IGNORE INTO schema_version (version, applied_at, description)
+VALUES (2, datetime('now'), 'Remove event_type CHECK constraint');
+`;
+
+/**
+ * Migration SQL for v1 → v2: Remove event_type CHECK constraint.
+ * SQLite doesn't support ALTER CHECK constraints directly,
+ * so we recreate the events table without the constraint.
+ */
+export const MIGRATE_V2_SQL = `
+CREATE TABLE events_v2 (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp     TEXT NOT NULL,
+    event_type    TEXT NOT NULL,
+    actor_id      TEXT,
+    target_id     TEXT,
+    target_type   TEXT
+                  CHECK (target_type IN ('agent', 'work_item', 'project')),
+    summary       TEXT NOT NULL,
+    metadata      TEXT
+);
+
+INSERT INTO events_v2 SELECT * FROM events;
+DROP TABLE events;
+ALTER TABLE events_v2 RENAME TO events;
+
+CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
+CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
+CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor_id);
 `;

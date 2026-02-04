@@ -172,15 +172,15 @@ describe("createServer", () => {
     expect(res.headers.get("access-control-allow-origin")).toBe("*");
   });
 
-  test("handles invalid filter gracefully", async () => {
+  test("accepts arbitrary event type filters", async () => {
     const { createServer } = await import("../src/server");
     server = createServer(db, dbPath, 0);
     const res = await fetch(
-      `http://localhost:${server.port}/api/events?filter=bad_type`
+      `http://localhost:${server.port}/api/events?filter=custom_type`
     );
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.ok).toBe(false);
-    expect(json.error).toContain("Invalid event type");
+    expect(json.ok).toBe(true);
+    expect(json.items).toEqual([]);
   });
 });

@@ -9,6 +9,7 @@ import {
   CREATE_INDEXES_SQL,
   SEED_VERSION_SQL,
   CURRENT_SCHEMA_VERSION,
+  MIGRATE_V2_SQL,
 } from "./schema";
 import type { DbOptions } from "./types";
 import { loadConfig } from "./config";
@@ -130,16 +131,17 @@ export function migrate(db: Database): void {
   const current = getSchemaVersion(db);
 
   // Migration registry: version -> migration function
-  // Currently empty — v1 schema is created by openDatabase.
-  // Future migrations go here:
-  // const migrations: Array<{ version: number; fn: (db: Database) => void }> = [
-  //   { version: 2, fn: (db) => { db.exec("ALTER TABLE ..."); } },
-  // ];
   const migrations: Array<{
     version: number;
     description: string;
     fn: (db: Database) => void;
-  }> = [];
+  }> = [
+    {
+      version: 2,
+      description: "Remove event_type CHECK constraint (free-form event types)",
+      fn: (db) => { db.exec(MIGRATE_V2_SQL); },
+    },
+  ];
 
   const pending = migrations.filter((m) => m.version > current);
   for (const migration of pending) {

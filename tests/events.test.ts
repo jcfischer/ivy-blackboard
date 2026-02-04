@@ -119,9 +119,11 @@ describe("observeEvents", () => {
     expect(events.every(e => e.event_type !== "heartbeat_received")).toBe(true);
   });
 
-  test("throws on invalid event type", async () => {
+  test("accepts arbitrary event types for filtering", async () => {
     const { observeEvents } = await import("../src/events");
-    expect(() => observeEvents(db, { type: "invalid_type" })).toThrow("Invalid event type");
+    // Custom event types should not throw — downstream consumers define their own
+    const events = observeEvents(db, { type: "custom_type" });
+    expect(events).toEqual([]);
   });
 
   test("filters by --session prefix", async () => {

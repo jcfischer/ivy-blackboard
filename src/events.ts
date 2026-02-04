@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
-import { EVENT_TYPES, type BlackboardEvent, type EventType } from "./types";
+import { type BlackboardEvent } from "./types";
 
 export interface ObserveEventsOptions {
   since?: string;
@@ -54,14 +54,6 @@ export function observeEvents(
 
   if (opts?.type) {
     const types = opts.type.split(",").map((t) => t.trim());
-    for (const t of types) {
-      if (!EVENT_TYPES.includes(t as EventType)) {
-        throw new BlackboardError(
-          `Invalid event type "${t}". Valid values: ${EVENT_TYPES.join(", ")}`,
-          "INVALID_EVENT_TYPE"
-        );
-      }
-    }
     const placeholders = types.map(() => "?").join(", ");
     conditions.push(`event_type IN (${placeholders})`);
     params.push(...types);

@@ -136,9 +136,9 @@ describe("openDatabase", () => {
     closeDatabase(db);
   });
 
-  it("sets schema_version to 1", () => {
+  it("sets schema_version to current version", () => {
     const db = openDatabase(dbPath);
-    expect(getSchemaVersion(db)).toBe(1);
+    expect(getSchemaVersion(db)).toBe(2);
     closeDatabase(db);
   });
 
@@ -153,7 +153,7 @@ describe("openDatabase", () => {
       )
       .all() as { name: string }[];
     expect(tables).toHaveLength(6);
-    expect(getSchemaVersion(db2)).toBe(1);
+    expect(getSchemaVersion(db2)).toBe(2);
     closeDatabase(db2);
   });
 
