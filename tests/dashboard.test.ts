@@ -134,16 +134,12 @@ describe("dashboard HTML", () => {
     const res = await fetch(`http://localhost:${server.port}/`);
     const html = await res.text();
 
-    // Error handlers should guard against replacing cached data:
-    // - agents: only show error when currentAgents.length === 0
-    expect(html).toContain("currentAgents.length === 0");
-    // - work items: only show error when currentWorkItems.length === 0
-    expect(html).toContain("currentWorkItems.length === 0");
-    // - projects: only show error when no cached JSON
-    expect(html).toContain("!lastProjectsJson");
-    // - agent log: only show error when no log has been loaded
-    expect(html).toContain("lastLogSize === 0");
-    // - status: only show error when stats never populated
-    expect(html).toContain(".textContent === '--'");
+    // Error handlers use failure counter — only show error after FAILURE_THRESHOLD consecutive failures
+    expect(html).toContain("FAILURE_THRESHOLD");
+    expect(html).toContain("fetchFailures");
+    // Each fetch section increments and checks its failure counter
+    expect(html).toContain("fetchFailures['agents']");
+    expect(html).toContain("fetchFailures['work']");
+    expect(html).toContain("fetchFailures['projects']");
   });
 });
