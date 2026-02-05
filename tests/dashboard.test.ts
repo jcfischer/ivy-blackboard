@@ -126,4 +126,24 @@ describe("dashboard HTML", () => {
     const status = await statusRes.json();
     expect(status.agents.active).toBe(1);
   });
+
+  test("transient fetch errors do not replace cached data", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+
+    const res = await fetch(`http://localhost:${server.port}/`);
+    const html = await res.text();
+
+    // Error handlers should guard against replacing cached data:
+    // - agents: only show error when currentAgents.length === 0
+    expect(html).toContain("currentAgents.length === 0");
+    // - work items: only show error when currentWorkItems.length === 0
+    expect(html).toContain("currentWorkItems.length === 0");
+    // - projects: only show error when no cached JSON
+    expect(html).toContain("!lastProjectsJson");
+    // - agent log: only show error when no log has been loaded
+    expect(html).toContain("lastLogSize === 0");
+    // - status: only show error when stats never populated
+    expect(html).toContain(".textContent === '--'");
+  });
 });
