@@ -475,10 +475,21 @@
     <div id="events-container"><span class="empty">Loading...</span></div>
   </div>
 
-  <div class="refresh-info">Auto-refreshes every 5s — <span id="last-update">never</span></div>
+  <div class="refresh-info">Auto-refreshes <span id="poll-mode">every 5s</span> — <span id="last-update">never</span></div>
 
   <script>
     const API = '';
+
+    // ─── SSE connection state & adaptive polling ──────────────────
+    let sseConnected = false;
+    let pollInterval = null;
+    const POLL_FAST = 5000;   // when SSE disconnected
+    const POLL_SLOW = 30000;  // when SSE connected
+
+    // ─── Change detection: skip re-render when data unchanged ─────
+    let lastAgentsJson = '';
+    let lastWorkJson = '';
+    let lastProjectsJson = '';
 
     function badge(status) {
       const cls = `badge badge-${status}`;
@@ -525,7 +536,10 @@
 
         document.getElementById('event-count').textContent = data.events_24h || 0;
       } catch (e) {
-        document.getElementById('agent-stats').textContent = 'Error';
+        // Suppress transient errors when SSE is connected
+        if (!sseConnected) {
+          document.getElementById('agent-stats').textContent = 'Error';
+        }
       }
     }
 
@@ -562,10 +576,18 @@
       try {
         const res = await fetch(API + '/api/agents?all=true');
         const data = await res.json();
-        currentAgents = data.items || [];
+        const items = data.items || [];
+        // Change detection: skip re-render if data unchanged
+        const json = JSON.stringify(items);
+        if (json === lastAgentsJson) return;
+        lastAgentsJson = json;
+        currentAgents = items;
         renderAgents();
       } catch (e) {
-        document.getElementById('agents-container').innerHTML = '<span class="empty">Error loading agents.</span>';
+        // Suppress transient errors when SSE is connected (data is still fresh)
+        if (!sseConnected) {
+          document.getElementById('agents-container').innerHTML = '<span class="empty">Error loading agents.</span>';
+        }
       }
     }
 
@@ -762,10 +784,18 @@
       try {
         const res = await fetch(API + '/api/work?all=true');
         const data = await res.json();
-        currentWorkItems = data.items || [];
+        const items = data.items || [];
+        // Change detection: skip re-render if data unchanged
+        const json = JSON.stringify(items);
+        if (json === lastWorkJson) return;
+        lastWorkJson = json;
+        currentWorkItems = items;
         renderWorkItems();
       } catch (e) {
-        document.getElementById('work-container').innerHTML = '<span class="empty">Error loading work items.</span>';
+        // Suppress transient errors when SSE is connected
+        if (!sseConnected) {
+          document.getElementById('work-container').innerHTML = '<span class="empty">Error loading work items.</span>';
+        }
       }
     }
 
@@ -987,16 +1017,30 @@
         es.onmessage = (msg) => {
           try {
             const data = JSON.parse(msg.data);
-            if (data.type === 'connected') return;
+            if (data.type === 'connected') {
+              sseConnected = true;
+              adjustPolling();
+              return;
+            }
             addEvent(data);
             renderEvents();
           } catch {}
         };
         es.onerror = () => {
+          sseConnected = false;
+          adjustPolling();
           es.close();
           setTimeout(connectSSE, 5000);
         };
       } catch {}
+    }
+
+    function adjustPolling() {
+      const interval = sseConnected ? POLL_SLOW : POLL_FAST;
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(refresh, interval);
+      const modeEl = document.getElementById('poll-mode');
+      if (modeEl) modeEl.textContent = sseConnected ? 'via SSE + poll every 30s' : 'every 5s';
     }
 
     async function fetchEvents() {
@@ -1012,13 +1056,21 @@
     // ─── Project list and detail ──────────────────────────────────
 
     let selectedProjectId = null;
+    let projectsNeedRender = false;
 
     async function fetchProjects() {
       try {
         const res = await fetch(API + '/api/projects');
         const data = await res.json();
-        const el = document.getElementById('projects-container');
         const projects = data.items || [];
+
+        // Change detection: skip re-render if data unchanged (ignore selection state)
+        const json = JSON.stringify(projects);
+        if (json === lastProjectsJson && !projectsNeedRender) return;
+        lastProjectsJson = json;
+        projectsNeedRender = false;
+
+        const el = document.getElementById('projects-container');
 
         if (projects.length === 0) {
           el.innerHTML = '<span class="empty">No projects registered.</span>';
@@ -1053,7 +1105,10 @@
         html += '</div>';
         el.innerHTML = html;
       } catch (e) {
-        document.getElementById('projects-container').innerHTML = '<span class="empty">Error loading projects.</span>';
+        // Suppress transient errors when SSE is connected
+        if (!sseConnected) {
+          document.getElementById('projects-container').innerHTML = '<span class="empty">Error loading projects.</span>';
+        }
       }
     }
 
@@ -1069,6 +1124,7 @@
       document.getElementById('project-detail-stats').innerHTML = '<span class="empty">Loading...</span>';
 
       // Re-render project list to show selection
+      projectsNeedRender = true;
       fetchProjects();
 
       try {
@@ -1174,6 +1230,7 @@
     function closeProjectDetail() {
       selectedProjectId = null;
       document.getElementById('project-detail').classList.remove('visible');
+      projectsNeedRender = true;
       fetchProjects();
     }
 
@@ -1191,7 +1248,7 @@
 
     refresh();
     connectSSE();
-    setInterval(refresh, 5000);
+    pollInterval = setInterval(refresh, POLL_FAST);
   </script>
 </body>
 </html>
