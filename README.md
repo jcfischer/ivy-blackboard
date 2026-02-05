@@ -50,6 +50,7 @@ See [pai-collab issue #78](https://github.com/jcfischer/pai-collab/issues/78) (l
 
 ```bash
 bun install
+bun run build    # compile, sign, install to ~/bin
 
 # Register an agent
 blackboard agent register --name "my-agent"

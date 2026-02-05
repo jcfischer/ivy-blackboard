@@ -252,8 +252,7 @@ The blackboard pattern works because the agents are local, the database is local
 git clone https://github.com/jcfischer/ivy-blackboard.git
 cd ivy-blackboard
 bun install
-bun build src/index.ts --compile --outfile dist/blackboard
-ln -sf "$(pwd)/dist/blackboard" ~/bin/blackboard
+bun run build
 
 # Register your projects
 blackboard project register --id my-app --name "My Application" --path ~/work/my-app
