@@ -27,12 +27,13 @@ describe("types", () => {
   });
 
   describe("WorkItemStatus", () => {
-    it("has exactly 4 values", () => {
+    it("has exactly 5 values", () => {
       expect(WORK_ITEM_STATUSES).toEqual([
         "available",
         "claimed",
         "completed",
         "blocked",
+        "waiting_for_response",
       ]);
     });
   });

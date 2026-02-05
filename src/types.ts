@@ -13,6 +13,7 @@ export const WORK_ITEM_STATUSES = [
   "claimed",
   "completed",
   "blocked",
+  "waiting_for_response",
 ] as const;
 export type WorkItemStatus = (typeof WORK_ITEM_STATUSES)[number];
 

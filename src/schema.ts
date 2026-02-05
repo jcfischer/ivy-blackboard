@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export const PRAGMA_SQL = [
   "PRAGMA journal_mode = WAL;",
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS work_items (
     source        TEXT NOT NULL,
     source_ref    TEXT,
     status        TEXT NOT NULL DEFAULT 'available'
-                  CHECK (status IN ('available', 'claimed', 'completed', 'blocked')),
+                  CHECK (status IN ('available', 'claimed', 'completed', 'blocked', 'waiting_for_response')),
     priority      TEXT DEFAULT 'P2'
                   CHECK (priority IN ('P1', 'P2', 'P3')),
     claimed_by    TEXT,
@@ -113,6 +113,8 @@ INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (3, datetime('now'), 'Add metadata column to heartbeats');
 INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (4, datetime('now'), 'Remove source CHECK constraint (extensible sources)');
+INSERT OR IGNORE INTO schema_version (version, applied_at, description)
+VALUES (5, datetime('now'), 'Add waiting_for_response status to work_items');
 `;
 
 /**
@@ -164,7 +166,7 @@ CREATE TABLE work_items_v4 (
     source        TEXT NOT NULL,
     source_ref    TEXT,
     status        TEXT NOT NULL DEFAULT 'available'
-                  CHECK (status IN ('available', 'claimed', 'completed', 'blocked')),
+                  CHECK (status IN ('available', 'claimed', 'completed', 'blocked', 'waiting_for_response')),
     priority      TEXT DEFAULT 'P2'
                   CHECK (priority IN ('P1', 'P2', 'P3')),
     claimed_by    TEXT,
@@ -178,6 +180,7 @@ CREATE TABLE work_items_v4 (
     FOREIGN KEY (claimed_by) REFERENCES agents(session_id)
 );
 
+PRAGMA foreign_keys = OFF;
 INSERT INTO work_items_v4 SELECT * FROM work_items;
 DROP TABLE work_items;
 ALTER TABLE work_items_v4 RENAME TO work_items;
@@ -186,5 +189,46 @@ CREATE INDEX IF NOT EXISTS idx_work_items_status ON work_items(status);
 CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id);
 CREATE INDEX IF NOT EXISTS idx_work_items_claimed_by ON work_items(claimed_by);
 CREATE INDEX IF NOT EXISTS idx_work_items_priority ON work_items(priority, status);
+PRAGMA foreign_keys = ON;
+`;
+
+/**
+ * Migration SQL for v4 → v5: Add waiting_for_response to work_items status CHECK.
+ * SQLite doesn't support ALTER CHECK constraints directly,
+ * so we recreate the work_items table with the extended constraint.
+ */
+export const MIGRATE_V5_SQL = `
+PRAGMA foreign_keys = OFF;
+CREATE TABLE work_items_v5 (
+    item_id       TEXT PRIMARY KEY,
+    project_id    TEXT,
+    title         TEXT NOT NULL,
+    description   TEXT,
+    source        TEXT NOT NULL,
+    source_ref    TEXT,
+    status        TEXT NOT NULL DEFAULT 'available'
+                  CHECK (status IN ('available', 'claimed', 'completed', 'blocked', 'waiting_for_response')),
+    priority      TEXT DEFAULT 'P2'
+                  CHECK (priority IN ('P1', 'P2', 'P3')),
+    claimed_by    TEXT,
+    claimed_at    TEXT,
+    completed_at  TEXT,
+    blocked_by    TEXT,
+    created_at    TEXT NOT NULL,
+    metadata      TEXT,
+
+    FOREIGN KEY (project_id) REFERENCES projects(project_id),
+    FOREIGN KEY (claimed_by) REFERENCES agents(session_id)
+);
+
+INSERT INTO work_items_v5 SELECT * FROM work_items;
+DROP TABLE work_items;
+ALTER TABLE work_items_v5 RENAME TO work_items;
+
+CREATE INDEX IF NOT EXISTS idx_work_items_status ON work_items(status);
+CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id);
+CREATE INDEX IF NOT EXISTS idx_work_items_claimed_by ON work_items(claimed_by);
+CREATE INDEX IF NOT EXISTS idx_work_items_priority ON work_items(priority, status);
+PRAGMA foreign_keys = ON;
 `;
 

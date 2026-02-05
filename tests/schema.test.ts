@@ -96,8 +96,8 @@ describe("schema SQL constants", () => {
     expect(version.version).toBe(1);
   });
 
-  it("CURRENT_SCHEMA_VERSION equals 4", () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(4);
+  it("CURRENT_SCHEMA_VERSION equals 5", () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(5);
   });
 });
 

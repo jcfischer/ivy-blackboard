@@ -12,6 +12,7 @@ import {
   MIGRATE_V2_SQL,
   MIGRATE_V3_SQL,
   MIGRATE_V4_SQL,
+  MIGRATE_V5_SQL,
 } from "./schema";
 import type { DbOptions } from "./types";
 import { loadConfig } from "./config";
@@ -152,6 +153,11 @@ export function migrate(db: Database): void {
       version: 4,
       description: "Remove source CHECK constraint (extensible source types)",
       fn: (db) => { db.exec(MIGRATE_V4_SQL); },
+    },
+    {
+      version: 5,
+      description: "Add waiting_for_response status to work_items",
+      fn: (db) => { db.exec(MIGRATE_V5_SQL); },
     },
   ];
 

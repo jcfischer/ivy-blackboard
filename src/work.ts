@@ -440,7 +440,7 @@ export function unblockWorkItem(
     throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
   }
 
-  if (item.status !== "blocked") {
+  if (item.status !== "blocked" && item.status !== "waiting_for_response") {
     throw new BlackboardError(`Work item is not blocked: ${itemId}`, "NOT_BLOCKED");
   }
 
@@ -459,6 +459,52 @@ export function unblockWorkItem(
   })();
 
   return { item_id: itemId, unblocked: true, restored_status: restoredStatus };
+}
+
+export interface SetWaitingResult {
+  item_id: string;
+  waiting: boolean;
+  previous_status: string;
+}
+
+/**
+ * Set a work item to waiting_for_response status.
+ * Used when a work item is blocked on an external dependency (e.g., cross-project issue).
+ * Preserves claimed_by if was claimed.
+ */
+export function setWaitingForResponse(
+  db: Database,
+  itemId: string,
+  opts?: { blockedBy?: string }
+): SetWaitingResult {
+  const item = db
+    .query("SELECT * FROM work_items WHERE item_id = ?")
+    .get(itemId) as BlackboardWorkItem | null;
+
+  if (!item) {
+    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
+  }
+
+  if (item.status === "completed") {
+    throw new BlackboardError(`Work item already completed: ${itemId}`, "ALREADY_COMPLETED");
+  }
+
+  const now = new Date().toISOString();
+  const previousStatus = item.status;
+  const blockedBy = opts?.blockedBy ?? null;
+
+  db.transaction(() => {
+    db.query(
+      "UPDATE work_items SET status = 'waiting_for_response', blocked_by = ? WHERE item_id = ?"
+    ).run(blockedBy, itemId);
+
+    const summary = `Work item "${item.title}" set to waiting_for_response${blockedBy ? ` (blocked by ${blockedBy})` : ""}`;
+    db.query(
+      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_blocked', NULL, ?, 'work_item', ?)"
+    ).run(now, itemId, summary);
+  })();
+
+  return { item_id: itemId, waiting: true, previous_status: previousStatus };
 }
 
 export interface DeleteWorkItemResult {
