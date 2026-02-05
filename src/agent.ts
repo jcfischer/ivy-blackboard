@@ -179,10 +179,18 @@ export function sendHeartbeat(
   }
 
   db.transaction(() => {
-    // Update agent last_seen_at
-    if (progress) {
+    // Update agent last_seen_at, current_work, and metadata
+    if (progress && metadata) {
+      db.query("UPDATE agents SET last_seen_at = ?, current_work = ?, metadata = ? WHERE session_id = ?").run(
+        now, progress, metadata, opts.sessionId
+      );
+    } else if (progress) {
       db.query("UPDATE agents SET last_seen_at = ?, current_work = ? WHERE session_id = ?").run(
         now, progress, opts.sessionId
+      );
+    } else if (metadata) {
+      db.query("UPDATE agents SET last_seen_at = ?, metadata = ? WHERE session_id = ?").run(
+        now, metadata, opts.sessionId
       );
     } else {
       db.query("UPDATE agents SET last_seen_at = ? WHERE session_id = ?").run(

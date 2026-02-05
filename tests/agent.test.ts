@@ -322,6 +322,50 @@ describe("sendHeartbeat", () => {
     const hb = db.query("SELECT metadata FROM heartbeats WHERE session_id = ?").get(agent.session_id) as any;
     expect(hb.metadata).toBeNull();
   });
+
+  test("persists metadata to agents table (not just heartbeats)", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+
+    // Agent metadata starts null
+    const beforeRow = db.query("SELECT metadata FROM agents WHERE session_id = ?").get(agent.session_id) as any;
+    expect(beforeRow.metadata).toBeNull();
+
+    const meta = JSON.stringify({ logPath: "/tmp/agent.log" });
+    sendHeartbeat(db, { sessionId: agent.session_id, metadata: meta });
+
+    // Agent metadata should now be set
+    const afterRow = db.query("SELECT metadata FROM agents WHERE session_id = ?").get(agent.session_id) as any;
+    expect(afterRow.metadata).toBe(meta);
+    expect(JSON.parse(afterRow.metadata).logPath).toBe("/tmp/agent.log");
+  });
+
+  test("persists metadata to agents table with progress", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+
+    const meta = JSON.stringify({ logPath: "/tmp/agent.log" });
+    sendHeartbeat(db, { sessionId: agent.session_id, progress: "Working", metadata: meta });
+
+    const row = db.query("SELECT metadata, current_work FROM agents WHERE session_id = ?").get(agent.session_id) as any;
+    expect(row.metadata).toBe(meta);
+    expect(row.current_work).toBe("Working");
+  });
+
+  test("does not clear agents.metadata when heartbeat has no metadata", async () => {
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+    const agent = registerAgent(db, { name: "Ivy" });
+
+    // Set metadata first
+    const meta = JSON.stringify({ logPath: "/tmp/agent.log" });
+    sendHeartbeat(db, { sessionId: agent.session_id, metadata: meta });
+
+    // Send heartbeat without metadata — should NOT clear it
+    sendHeartbeat(db, { sessionId: agent.session_id, progress: "Still working" });
+
+    const row = db.query("SELECT metadata FROM agents WHERE session_id = ?").get(agent.session_id) as any;
+    expect(row.metadata).toBe(meta);
+  });
 });
 
 // F-4 CLI heartbeat

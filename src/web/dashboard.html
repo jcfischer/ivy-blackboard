@@ -686,13 +686,13 @@
       const isActive = agent.status === 'active' || agent.status === 'idle';
       document.getElementById('log-streaming-indicator').style.display = isActive ? 'inline-block' : 'none';
 
-      // Fetch log immediately
-      fetchAgentLog(sessionId);
+      // Fetch full log immediately
+      fetchAgentLog(sessionId, false);
 
-      // Poll for updates if agent is active
+      // Poll for updates if agent is active (tail only for efficiency)
       if (logPollInterval) clearInterval(logPollInterval);
       if (isActive) {
-        logPollInterval = setInterval(() => fetchAgentLog(sessionId), 2000);
+        logPollInterval = setInterval(() => fetchAgentLog(sessionId, true), 2000);
       }
 
       // Re-render agent list to show selection
@@ -709,9 +709,15 @@
       renderAgents();
     }
 
-    async function fetchAgentLog(sessionId) {
+    let lastLogSize = 0;
+
+    async function fetchAgentLog(sessionId, tailOnly) {
       try {
-        const res = await fetch(API + '/api/agents/' + encodeURIComponent(sessionId) + '/log');
+        let url = API + '/api/agents/' + encodeURIComponent(sessionId) + '/log';
+        if (tailOnly) {
+          url += '?tail=200';
+        }
+        const res = await fetch(url);
         const el = document.getElementById('log-content');
 
         if (!res.ok) {
@@ -721,6 +727,20 @@
 
         const text = await res.text();
         const agentStatus = res.headers.get('X-Agent-Status');
+        const logSize = parseInt(res.headers.get('X-Log-Size') || '0', 10);
+
+        // Skip update if log hasn't changed (same size)
+        if (tailOnly && logSize === lastLogSize && logSize > 0) {
+          // Still update streaming indicator
+          const isActive = agentStatus === 'active' || agentStatus === 'idle';
+          document.getElementById('log-streaming-indicator').style.display = isActive ? 'inline-block' : 'none';
+          if (!isActive && logPollInterval) {
+            clearInterval(logPollInterval);
+            logPollInterval = null;
+          }
+          return;
+        }
+        lastLogSize = logSize;
 
         // Format the log content with stderr highlighting
         const formatted = escapeHtml(text)

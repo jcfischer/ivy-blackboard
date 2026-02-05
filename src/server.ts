@@ -155,18 +155,51 @@ export function createServer(
           }
 
           const tailParam = url.searchParams.get("tail");
-          const content = readFileSync(logPath, "utf-8");
+          const size = statSync(logPath).size;
 
           if (tailParam) {
             const n = parseInt(tailParam, 10);
-            const lines = content.split("\n");
+            // For tail requests, read only the last chunk to avoid loading entire file
+            const TAIL_CHUNK_SIZE = Math.min(size, 256 * 1024); // Read last 256KB max
+            const fd = require("fs").openSync(logPath, "r");
+            const buf = Buffer.alloc(TAIL_CHUNK_SIZE);
+            const startPos = Math.max(0, size - TAIL_CHUNK_SIZE);
+            require("fs").readSync(fd, buf, 0, TAIL_CHUNK_SIZE, startPos);
+            require("fs").closeSync(fd);
+            const chunk = buf.toString("utf-8");
+            let lines = chunk.split("\n");
+            // If we started mid-file, drop the first partial line
+            if (startPos > 0) lines = lines.slice(1);
+            // Drop trailing empty element from final newline
+            if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
             const tailed = lines.slice(-n).join("\n");
             return new Response(tailed, {
-              headers: { "Content-Type": "text/plain; charset=utf-8", ...CORS_HEADERS },
+              headers: {
+                "Content-Type": "text/plain; charset=utf-8",
+                "X-Log-Size": String(size),
+                "X-Agent-Status": agent.status,
+                ...CORS_HEADERS,
+              },
             });
           }
 
-          const size = statSync(logPath).size;
+          // For full reads, cap at 1MB to prevent memory issues with huge logs
+          const MAX_FULL_READ = 1024 * 1024;
+          let content: string;
+          if (size > MAX_FULL_READ) {
+            const fd = require("fs").openSync(logPath, "r");
+            const buf = Buffer.alloc(MAX_FULL_READ);
+            const startPos = size - MAX_FULL_READ;
+            require("fs").readSync(fd, buf, 0, MAX_FULL_READ, startPos);
+            require("fs").closeSync(fd);
+            // Drop first partial line since we started mid-file
+            const chunk = buf.toString("utf-8");
+            const firstNewline = chunk.indexOf("\n");
+            content = "[... truncated, showing last ~1MB ...]\n" + chunk.slice(firstNewline + 1);
+          } else {
+            content = readFileSync(logPath, "utf-8");
+          }
+
           return new Response(content, {
             headers: {
               "Content-Type": "text/plain; charset=utf-8",
