@@ -10,6 +10,7 @@ import {
   SEED_VERSION_SQL,
   CURRENT_SCHEMA_VERSION,
   MIGRATE_V2_SQL,
+  MIGRATE_V3_SQL,
 } from "./schema";
 import type { DbOptions } from "./types";
 import { loadConfig } from "./config";
@@ -140,6 +141,11 @@ export function migrate(db: Database): void {
       version: 2,
       description: "Remove event_type CHECK constraint (free-form event types)",
       fn: (db) => { db.exec(MIGRATE_V2_SQL); },
+    },
+    {
+      version: 3,
+      description: "Add metadata column to heartbeats table",
+      fn: (db) => { db.exec(MIGRATE_V3_SQL); },
     },
   ];
 

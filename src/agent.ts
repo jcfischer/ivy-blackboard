@@ -25,6 +25,7 @@ export interface HeartbeatOptions {
   sessionId: string;
   progress?: string;
   workItemId?: string;
+  metadata?: string;
 }
 
 export interface HeartbeatResult {
@@ -32,6 +33,7 @@ export interface HeartbeatResult {
   agent_name: string;
   timestamp: string;
   progress: string | null;
+  metadata: string | null;
 }
 
 export interface DeregisterAgentResult {
@@ -166,6 +168,16 @@ export function sendHeartbeat(
   const progress = opts.progress ? sanitizeText(opts.progress) : null;
   const workItemId = opts.workItemId ?? null;
 
+  let metadata: string | null = null;
+  if (opts.metadata) {
+    try {
+      JSON.parse(opts.metadata);
+      metadata = opts.metadata;
+    } catch {
+      throw new BlackboardError(`Invalid JSON in metadata: ${opts.metadata}`, "INVALID_METADATA");
+    }
+  }
+
   db.transaction(() => {
     // Update agent last_seen_at
     if (progress) {
@@ -180,9 +192,9 @@ export function sendHeartbeat(
 
     // Insert heartbeat row
     db.query(`
-      INSERT INTO heartbeats (session_id, timestamp, progress, work_item_id)
-      VALUES (?, ?, ?, ?)
-    `).run(opts.sessionId, now, progress, workItemId);
+      INSERT INTO heartbeats (session_id, timestamp, progress, work_item_id, metadata)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(opts.sessionId, now, progress, workItemId, metadata);
 
     // Emit event only when progress is provided
     if (progress) {
@@ -198,6 +210,7 @@ export function sendHeartbeat(
     agent_name: agent.agent_name,
     timestamp: now,
     progress,
+    metadata,
   };
 }
 

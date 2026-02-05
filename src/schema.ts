@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export const PRAGMA_SQL = [
   "PRAGMA journal_mode = WAL;",
@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS heartbeats (
     timestamp     TEXT NOT NULL,
     progress      TEXT,
     work_item_id  TEXT,
+    metadata      TEXT,
 
     FOREIGN KEY (session_id) REFERENCES agents(session_id),
     FOREIGN KEY (work_item_id) REFERENCES work_items(item_id)
@@ -109,6 +110,8 @@ INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (1, datetime('now'), 'Initial local blackboard schema');
 INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (2, datetime('now'), 'Remove event_type CHECK constraint');
+INSERT OR IGNORE INTO schema_version (version, applied_at, description)
+VALUES (3, datetime('now'), 'Add metadata column to heartbeats');
 `;
 
 /**
@@ -136,5 +139,13 @@ ALTER TABLE events_v2 RENAME TO events;
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor_id);
+`;
+
+/**
+ * Migration SQL for v2 → v3: Add metadata column to heartbeats table.
+ * Simple ALTER TABLE ADD COLUMN — SQLite supports this natively.
+ */
+export const MIGRATE_V3_SQL = `
+ALTER TABLE heartbeats ADD COLUMN metadata TEXT;
 `;
 

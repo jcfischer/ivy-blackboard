@@ -101,6 +101,7 @@ export interface BlackboardHeartbeat {
   timestamp: string; // ISO 8601
   progress: string | null;
   work_item_id: string | null;
+  metadata: string | null; // JSON blob
 }
 
 export interface BlackboardEvent {
