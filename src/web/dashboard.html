@@ -433,6 +433,10 @@
   <div class="grid">
     <div class="card">
       <h2>Agents</h2>
+      <div class="work-tabs" id="agent-tabs">
+        <button class="work-tab active" onclick="switchAgentTab('running')">Running <span class="tab-count" id="agent-running-count">0</span></button>
+        <button class="work-tab" onclick="switchAgentTab('completed')">Completed <span class="tab-count" id="agent-completed-count">0</span></button>
+      </div>
       <div id="agents-container"><span class="empty">Loading...</span></div>
       <div class="log-panel" id="log-panel">
         <div class="log-header">
@@ -525,11 +529,13 @@
       }
     }
 
-    // ─── Agent list with log viewer ─────────────────────────────────
+    // ─── Agent list with tabs and log viewer ────────────────────────
 
     let currentAgents = [];
+    let currentAgentTab = 'running';
     let selectedAgentId = null;
     let logPollInterval = null;
+    let elapsedInterval = null;
 
     function hasLogMetadata(agent) {
       if (!agent.metadata) return false;
@@ -539,25 +545,57 @@
       } catch { return false; }
     }
 
+    function formatElapsed(isoStart) {
+      const ms = Date.now() - new Date(isoStart).getTime();
+      if (ms < 0) return '0s';
+      const s = Math.floor(ms / 1000);
+      if (s < 60) return s + 's';
+      const m = Math.floor(s / 60);
+      const rs = s % 60;
+      if (m < 60) return m + 'm ' + rs + 's';
+      const h = Math.floor(m / 60);
+      const rm = m % 60;
+      return h + 'h ' + rm + 'm';
+    }
+
     async function fetchAgents() {
       try {
         const res = await fetch(API + '/api/agents?all=true');
         const data = await res.json();
-        const el = document.getElementById('agents-container');
         currentAgents = data.items || [];
+        renderAgents();
+      } catch (e) {
+        document.getElementById('agents-container').innerHTML = '<span class="empty">Error loading agents.</span>';
+      }
+    }
 
-        // Filter: show dispatch agents (have metadata with logPath) and active/idle agents
-        const dispatchAgents = currentAgents.filter(a =>
-          hasLogMetadata(a) || a.status === 'active' || a.status === 'idle'
-        );
+    function renderAgents() {
+      const el = document.getElementById('agents-container');
 
-        if (dispatchAgents.length === 0) {
-          el.innerHTML = '<span class="empty">No agents.</span>';
-          return;
-        }
+      // Filter: show dispatch agents (have metadata with logPath) and active/idle agents
+      const dispatchAgents = currentAgents.filter(a =>
+        hasLogMetadata(a) || a.status === 'active' || a.status === 'idle'
+      );
 
-        let html = '<table><tr><th>Name</th><th>Status</th><th>Project</th><th>Work</th><th>Last Seen</th></tr>';
-        for (const a of dispatchAgents) {
+      const running = dispatchAgents.filter(a => a.status === 'active' || a.status === 'idle');
+      const completed = dispatchAgents.filter(a => a.status === 'completed' || a.status === 'stale');
+
+      // Update tab counts
+      document.getElementById('agent-running-count').textContent = running.length;
+      document.getElementById('agent-completed-count').textContent = completed.length;
+
+      const agents = currentAgentTab === 'running' ? running : completed;
+
+      if (agents.length === 0) {
+        const msg = currentAgentTab === 'running' ? 'No running agents.' : 'No completed agents.';
+        el.innerHTML = '<span class="empty">' + msg + '</span>';
+        stopElapsedTimer();
+        return;
+      }
+
+      if (currentAgentTab === 'running') {
+        let html = '<table><tr><th>Name</th><th>Status</th><th>Project</th><th>Work</th><th>Elapsed</th></tr>';
+        for (const a of agents) {
           const isSelected = a.session_id === selectedAgentId;
           const hasLog = hasLogMetadata(a);
           const classes = ['agent-row'];
@@ -565,17 +603,67 @@
           if (hasLog) classes.push('has-log');
 
           html += `<tr class="${classes.join(' ')}" onclick="selectAgent('${a.session_id}')" title="${hasLog ? 'Click to view log' : 'No log available'}">
-            <td>${a.agent_name}</td>
+            <td>${escapeHtml(a.agent_name)}</td>
             <td>${badge(a.status)}</td>
             <td>${a.project || '--'}</td>
             <td class="truncate">${truncate(a.current_work, 40)}</td>
+            <td class="agent-elapsed" data-started="${a.started_at}">${formatElapsed(a.started_at)}</td>
+          </tr>`;
+        }
+        html += '</table>';
+        el.innerHTML = html;
+        startElapsedTimer();
+      } else {
+        // Completed tab: sort by last_seen_at DESC (most recently completed first)
+        const sorted = [...agents].sort((a, b) => new Date(b.last_seen_at).getTime() - new Date(a.last_seen_at).getTime());
+        let html = '<table><tr><th>Name</th><th>Status</th><th>Project</th><th>Work</th><th>Duration</th><th>Completed</th></tr>';
+        for (const a of sorted) {
+          const isSelected = a.session_id === selectedAgentId;
+          const hasLog = hasLogMetadata(a);
+          const classes = ['agent-row'];
+          if (isSelected) classes.push('selected');
+          if (hasLog) classes.push('has-log');
+
+          const duration = a.started_at && a.last_seen_at
+            ? formatDuration(new Date(a.last_seen_at).getTime() - new Date(a.started_at).getTime())
+            : '--';
+
+          html += `<tr class="${classes.join(' ')}" onclick="selectAgent('${a.session_id}')" title="${hasLog ? 'Click to view log' : 'No log available'}">
+            <td>${escapeHtml(a.agent_name)}</td>
+            <td>${badge(a.status)}</td>
+            <td>${a.project || '--'}</td>
+            <td class="truncate">${truncate(a.current_work, 40)}</td>
+            <td>${duration}</td>
             <td>${relTime(a.last_seen_at)}</td>
           </tr>`;
         }
         html += '</table>';
         el.innerHTML = html;
-      } catch (e) {
-        document.getElementById('agents-container').innerHTML = '<span class="empty">Error loading agents.</span>';
+        stopElapsedTimer();
+      }
+    }
+
+    function switchAgentTab(tab) {
+      currentAgentTab = tab;
+      document.querySelectorAll('#agent-tabs .work-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('#agent-tabs .work-tab[onclick*="' + tab + '"]').classList.add('active');
+      renderAgents();
+    }
+
+    function startElapsedTimer() {
+      stopElapsedTimer();
+      elapsedInterval = setInterval(() => {
+        document.querySelectorAll('.agent-elapsed').forEach(el => {
+          const started = el.getAttribute('data-started');
+          if (started) el.textContent = formatElapsed(started);
+        });
+      }, 1000);
+    }
+
+    function stopElapsedTimer() {
+      if (elapsedInterval) {
+        clearInterval(elapsedInterval);
+        elapsedInterval = null;
       }
     }
 
@@ -608,7 +696,7 @@
       }
 
       // Re-render agent list to show selection
-      fetchAgents();
+      renderAgents();
     }
 
     function closeLogPanel() {
@@ -618,7 +706,7 @@
         clearInterval(logPollInterval);
         logPollInterval = null;
       }
-      fetchAgents();
+      renderAgents();
     }
 
     async function fetchAgentLog(sessionId) {
