@@ -491,6 +491,12 @@
     let lastWorkJson = '';
     let lastProjectsJson = '';
 
+    // ─── Transient error suppression ────────────────────────────────
+    // Don't show error states until multiple consecutive failures.
+    // This prevents flashing errors from brief network hiccups.
+    const FAILURE_THRESHOLD = 3;
+    const fetchFailures = {};
+
     function badge(status) {
       const cls = `badge badge-${status}`;
       return `<span class="${cls}">${status}</span>`;
@@ -520,6 +526,7 @@
       try {
         const res = await fetch(API + '/api/status');
         const data = await res.json();
+        fetchFailures['status'] = 0;
 
         document.getElementById('db-path').textContent = data.database || '--';
         document.getElementById('db-size').textContent = data.database_size || '--';
@@ -536,8 +543,8 @@
 
         document.getElementById('event-count').textContent = data.events_24h || 0;
       } catch (e) {
-        // Only show error if stats have never been populated
-        if (!sseConnected && document.getElementById('agent-stats').textContent === '--') {
+        fetchFailures['status'] = (fetchFailures['status'] || 0) + 1;
+        if (!sseConnected && fetchFailures['status'] >= FAILURE_THRESHOLD) {
           document.getElementById('agent-stats').textContent = 'Error';
         }
       }
@@ -576,6 +583,7 @@
       try {
         const res = await fetch(API + '/api/agents?all=true');
         const data = await res.json();
+        fetchFailures['agents'] = 0;
         const items = data.items || [];
         // Change detection: skip re-render if data unchanged
         const json = JSON.stringify(items);
@@ -584,8 +592,8 @@
         currentAgents = items;
         renderAgents();
       } catch (e) {
-        // Only show error if we have no cached data to display
-        if (!sseConnected && currentAgents.length === 0) {
+        fetchFailures['agents'] = (fetchFailures['agents'] || 0) + 1;
+        if (!sseConnected && fetchFailures['agents'] >= FAILURE_THRESHOLD) {
           document.getElementById('agents-container').innerHTML = '<span class="empty">Error loading agents.</span>';
         }
       }
@@ -741,6 +749,7 @@
         }
         const res = await fetch(url);
         const el = document.getElementById('log-content');
+        fetchFailures['log'] = 0;
 
         if (!res.ok) {
           el.innerHTML = '<span class="log-no-content">No log file available for this agent.</span>';
@@ -790,10 +799,11 @@
           logPollInterval = null;
         }
       } catch (e) {
-        // Only show error if we have no cached log content to display
-        if (lastLogSize === 0) {
-          document.getElementById('log-content').innerHTML =
-            '<span class="log-no-content">Error fetching log.</span>';
+        fetchFailures['log'] = (fetchFailures['log'] || 0) + 1;
+        const el = document.getElementById('log-content');
+        const hasContent = el.textContent && !el.querySelector('.log-no-content');
+        if (!hasContent && !sseConnected && fetchFailures['log'] >= FAILURE_THRESHOLD) {
+          el.innerHTML = '<span class="log-no-content">Error fetching log.</span>';
         }
       }
     }
@@ -807,6 +817,7 @@
       try {
         const res = await fetch(API + '/api/work?all=true');
         const data = await res.json();
+        fetchFailures['work'] = 0;
         const items = data.items || [];
         // Change detection: skip re-render if data unchanged
         const json = JSON.stringify(items);
@@ -815,8 +826,8 @@
         currentWorkItems = items;
         renderWorkItems();
       } catch (e) {
-        // Only show error if we have no cached data to display
-        if (!sseConnected && currentWorkItems.length === 0) {
+        fetchFailures['work'] = (fetchFailures['work'] || 0) + 1;
+        if (!sseConnected && fetchFailures['work'] >= FAILURE_THRESHOLD) {
           document.getElementById('work-container').innerHTML = '<span class="empty">Error loading work items.</span>';
         }
       }
@@ -1085,6 +1096,7 @@
       try {
         const res = await fetch(API + '/api/projects');
         const data = await res.json();
+        fetchFailures['projects'] = 0;
         const projects = data.items || [];
 
         // Change detection: skip re-render if data unchanged (ignore selection state)
@@ -1128,8 +1140,8 @@
         html += '</div>';
         el.innerHTML = html;
       } catch (e) {
-        // Only show error if we have no cached data to display
-        if (!sseConnected && !lastProjectsJson) {
+        fetchFailures['projects'] = (fetchFailures['projects'] || 0) + 1;
+        if (!sseConnected && fetchFailures['projects'] >= FAILURE_THRESHOLD) {
           document.getElementById('projects-container').innerHTML = '<span class="empty">Error loading projects.</span>';
         }
       }
