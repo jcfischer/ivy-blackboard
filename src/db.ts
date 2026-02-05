@@ -11,6 +11,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   MIGRATE_V2_SQL,
   MIGRATE_V3_SQL,
+  MIGRATE_V4_SQL,
 } from "./schema";
 import type { DbOptions } from "./types";
 import { loadConfig } from "./config";
@@ -146,6 +147,11 @@ export function migrate(db: Database): void {
       version: 3,
       description: "Add metadata column to heartbeats table",
       fn: (db) => { db.exec(MIGRATE_V3_SQL); },
+    },
+    {
+      version: 4,
+      description: "Remove source CHECK constraint (extensible source types)",
+      fn: (db) => { db.exec(MIGRATE_V4_SQL); },
     },
   ];
 

@@ -20,9 +20,9 @@ export type WorkItemStatus = (typeof WORK_ITEM_STATUSES)[number];
 export const WORK_ITEM_PRIORITIES = ["P1", "P2", "P3"] as const;
 export type WorkItemPriority = (typeof WORK_ITEM_PRIORITIES)[number];
 
-// Work item source values
-export const WORK_ITEM_SOURCES = ["github", "local", "operator"] as const;
-export type WorkItemSource = (typeof WORK_ITEM_SOURCES)[number];
+// Well-known work item source values (conventions, not exhaustive — any non-empty string is valid)
+export const WELL_KNOWN_SOURCES = ["github", "local", "operator"] as const;
+export type WorkItemSource = string;
 
 // Known blackboard event types (not exhaustive — downstream consumers may define their own)
 export const KNOWN_EVENT_TYPES = [

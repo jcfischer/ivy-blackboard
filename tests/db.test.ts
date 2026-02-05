@@ -3,6 +3,7 @@ import { mkdirSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveDbPath, openDatabase, closeDatabase, getSchemaVersion } from "../src/db";
+import { CURRENT_SCHEMA_VERSION } from "../src/schema";
 import { resetConfigCache } from "../src/config";
 
 const TEST_DIR = join(tmpdir(), `blackboard-test-${Date.now()}`);
@@ -138,7 +139,7 @@ describe("openDatabase", () => {
 
   it("sets schema_version to current version", () => {
     const db = openDatabase(dbPath);
-    expect(getSchemaVersion(db)).toBe(3);
+    expect(getSchemaVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
     closeDatabase(db);
   });
 
@@ -153,7 +154,7 @@ describe("openDatabase", () => {
       )
       .all() as { name: string }[];
     expect(tables).toHaveLength(6);
-    expect(getSchemaVersion(db2)).toBe(3);
+    expect(getSchemaVersion(db2)).toBe(CURRENT_SCHEMA_VERSION);
     closeDatabase(db2);
   });
 

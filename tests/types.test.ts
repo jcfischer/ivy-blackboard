@@ -15,7 +15,7 @@ import {
   AGENT_STATUSES,
   WORK_ITEM_STATUSES,
   WORK_ITEM_PRIORITIES,
-  WORK_ITEM_SOURCES,
+  WELL_KNOWN_SOURCES,
   KNOWN_EVENT_TYPES,
 } from "../src/types";
 
@@ -44,8 +44,15 @@ describe("types", () => {
   });
 
   describe("WorkItemSource", () => {
-    it("has exactly 3 values", () => {
-      expect(WORK_ITEM_SOURCES).toEqual(["github", "local", "operator"]);
+    it("WELL_KNOWN_SOURCES documents conventional values", () => {
+      expect(WELL_KNOWN_SOURCES).toContain("github");
+      expect(WELL_KNOWN_SOURCES).toContain("local");
+      expect(WELL_KNOWN_SOURCES).toContain("operator");
+    });
+
+    it("WorkItemSource accepts any string", () => {
+      const custom: WorkItemSource = "specflow";
+      expect(typeof custom).toBe("string");
     });
   });
 
