@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { openDatabase, closeDatabase } from "../src/db";
@@ -415,5 +415,64 @@ describe("createServer", () => {
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.ok).toBe(false);
+  });
+
+  test("GET /api/agents/:id/log returns log content when metadata has logPath", async () => {
+    const { createServer } = await import("../src/server");
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+
+    const agent = registerAgent(db, { name: "LogAgent" });
+    const logFile = join(tmpDir, "agent.log");
+    writeFileSync(logFile, "line 1\nline 2\nline 3\n");
+
+    // Send heartbeat with logPath metadata to persist it on agents table
+    sendHeartbeat(db, { sessionId: agent.session_id, metadata: JSON.stringify({ logPath: logFile }) });
+
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/agents/${agent.session_id}/log`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/plain");
+    expect(res.headers.get("x-agent-status")).toBe("active");
+    expect(res.headers.get("x-log-size")).toBeTruthy();
+    const text = await res.text();
+    expect(text).toContain("line 1");
+    expect(text).toContain("line 3");
+  });
+
+  test("GET /api/agents/:id/log?tail=2 returns last 2 lines", async () => {
+    const { createServer } = await import("../src/server");
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+
+    const agent = registerAgent(db, { name: "TailAgent" });
+    const logFile = join(tmpDir, "tail.log");
+    writeFileSync(logFile, "line 1\nline 2\nline 3\nline 4\n");
+    sendHeartbeat(db, { sessionId: agent.session_id, metadata: JSON.stringify({ logPath: logFile }) });
+
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/agents/${agent.session_id}/log?tail=2`);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const lines = text.split("\n").filter(l => l.length > 0);
+    expect(lines.length).toBe(2);
+    expect(lines[0]).toBe("line 3");
+    expect(lines[1]).toBe("line 4");
+  });
+
+  test("GET /api/agents/:id/log returns 404 when no metadata", async () => {
+    const { createServer } = await import("../src/server");
+    const { registerAgent } = await import("../src/agent");
+
+    const agent = registerAgent(db, { name: "NoLogAgent" });
+
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/agents/${agent.session_id}/log`);
+    expect(res.status).toBe(404);
+  });
+
+  test("GET /api/agents/:id/log returns 404 for nonexistent agent", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/agents/nonexistent/log`);
+    expect(res.status).toBe(404);
   });
 });
