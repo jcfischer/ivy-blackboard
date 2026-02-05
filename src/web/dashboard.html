@@ -536,8 +536,8 @@
 
         document.getElementById('event-count').textContent = data.events_24h || 0;
       } catch (e) {
-        // Suppress transient errors when SSE is connected
-        if (!sseConnected) {
+        // Only show error if stats have never been populated
+        if (!sseConnected && document.getElementById('agent-stats').textContent === '--') {
           document.getElementById('agent-stats').textContent = 'Error';
         }
       }
@@ -584,8 +584,8 @@
         currentAgents = items;
         renderAgents();
       } catch (e) {
-        // Suppress transient errors when SSE is connected (data is still fresh)
-        if (!sseConnected) {
+        // Only show error if we have no cached data to display
+        if (!sseConnected && currentAgents.length === 0) {
           document.getElementById('agents-container').innerHTML = '<span class="empty">Error loading agents.</span>';
         }
       }
@@ -790,8 +790,11 @@
           logPollInterval = null;
         }
       } catch (e) {
-        document.getElementById('log-content').innerHTML =
-          '<span class="log-no-content">Error fetching log.</span>';
+        // Only show error if we have no cached log content to display
+        if (lastLogSize === 0) {
+          document.getElementById('log-content').innerHTML =
+            '<span class="log-no-content">Error fetching log.</span>';
+        }
       }
     }
 
@@ -812,8 +815,8 @@
         currentWorkItems = items;
         renderWorkItems();
       } catch (e) {
-        // Suppress transient errors when SSE is connected
-        if (!sseConnected) {
+        // Only show error if we have no cached data to display
+        if (!sseConnected && currentWorkItems.length === 0) {
           document.getElementById('work-container').innerHTML = '<span class="empty">Error loading work items.</span>';
         }
       }
@@ -1125,8 +1128,8 @@
         html += '</div>';
         el.innerHTML = html;
       } catch (e) {
-        // Suppress transient errors when SSE is connected
-        if (!sseConnected) {
+        // Only show error if we have no cached data to display
+        if (!sseConnected && !lastProjectsJson) {
           document.getElementById('projects-container').innerHTML = '<span class="empty">Error loading projects.</span>';
         }
       }
