@@ -70,7 +70,7 @@ describe("observeEvents", () => {
     ).run(ts, type, actorId, summary);
   }
 
-  test("returns events ordered by timestamp ASC", async () => {
+  test("returns events ordered by timestamp DESC by default (most recent first)", async () => {
     const { observeEvents } = await import("../src/events");
     insertEvent(db, "agent_registered", "sess-1", "Agent A registered", 120);
     insertEvent(db, "heartbeat_received", "sess-1", "Heartbeat", 60);
@@ -78,8 +78,20 @@ describe("observeEvents", () => {
 
     const events = observeEvents(db);
     expect(events.length).toBe(3);
+    expect(events[0].event_type).toBe("agent_deregistered");
+    expect(events[2].event_type).toBe("agent_registered");
+  });
+
+  test("returns events in ASC order when 'since' is provided", async () => {
+    const { observeEvents } = await import("../src/events");
+    insertEvent(db, "agent_registered", "sess-1", "Agent A registered", 120);
+    insertEvent(db, "heartbeat_received", "sess-1", "Heartbeat", 60);
+    insertEvent(db, "agent_deregistered", "sess-1", "Agent A deregistered", 0);
+
+    const events = observeEvents(db, { since: "1h" });
+    // With 'since', events are in ASC order (chronological for tailing)
     expect(events[0].event_type).toBe("agent_registered");
-    expect(events[2].event_type).toBe("agent_deregistered");
+    expect(events[events.length - 1].event_type).toBe("agent_deregistered");
   });
 
   test("defaults to limit 50", async () => {

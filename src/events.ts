@@ -66,7 +66,10 @@ export function observeEvents(
 
   const limit = opts?.limit ?? 50;
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const sql = `SELECT * FROM events ${where} ORDER BY timestamp ASC LIMIT ?`;
+  // When filtering by 'since', return chronological order (ASC) for streaming/tailing.
+  // Otherwise return most recent events first (DESC) for dashboard/overview use.
+  const order = opts?.since ? "ASC" : "DESC";
+  const sql = `SELECT * FROM events ${where} ORDER BY timestamp ${order} LIMIT ?`;
   params.push(limit);
 
   return db.query(sql).all(...params) as BlackboardEvent[];

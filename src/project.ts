@@ -155,13 +155,10 @@ export function listProjects(db: Database): ProjectWithCounts[] {
         COUNT(DISTINCT CASE WHEN w.status = 'claimed' THEN w.item_id END) as work_claimed,
         COUNT(DISTINCT CASE WHEN w.status = 'completed' THEN w.item_id END) as work_completed,
         COUNT(DISTINCT CASE WHEN w.status = 'blocked' THEN w.item_id END) as work_blocked,
-        MAX(e.timestamp) as last_activity
+        MAX(COALESCE(a.last_seen_at, w.created_at, p.registered_at)) as last_activity
       FROM projects p
       LEFT JOIN agents a ON a.project = p.project_id
       LEFT JOIN work_items w ON w.project_id = p.project_id
-      LEFT JOIN events e ON e.target_id = p.project_id OR e.actor_id IN (
-        SELECT session_id FROM agents WHERE project = p.project_id
-      )
       GROUP BY p.project_id
       ORDER BY last_activity DESC NULLS LAST, p.registered_at DESC
     `)
