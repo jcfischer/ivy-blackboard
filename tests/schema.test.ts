@@ -96,8 +96,8 @@ describe("schema SQL constants", () => {
     expect(version.version).toBe(1);
   });
 
-  it("CURRENT_SCHEMA_VERSION equals 3", () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(3);
+  it("CURRENT_SCHEMA_VERSION equals 4", () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(4);
   });
 });
 
@@ -134,12 +134,19 @@ describe("CHECK constraints", () => {
     expect(count.c).toBe(4);
   });
 
-  it("work_items rejects invalid source", () => {
-    expect(() => {
-      db.query(
-        "INSERT INTO work_items (item_id, title, source, created_at) VALUES (?, ?, ?, ?)"
-      ).run("w1", "test", "invalid", "2026-01-01");
-    }).toThrow();
+  it("work_items accepts any non-empty source string (no CHECK constraint)", () => {
+    db.query(
+      "INSERT INTO work_items (item_id, title, source, created_at) VALUES (?, ?, ?, ?)"
+    ).run("w1", "test", "specflow", "2026-01-01");
+    db.query(
+      "INSERT INTO work_items (item_id, title, source, created_at) VALUES (?, ?, ?, ?)"
+    ).run("w2", "test2", "webhook", "2026-01-01");
+    db.query(
+      "INSERT INTO work_items (item_id, title, source, created_at) VALUES (?, ?, ?, ?)"
+    ).run("w3", "test3", "github", "2026-01-01");
+
+    const count = db.query("SELECT COUNT(*) as c FROM work_items").get() as any;
+    expect(count.c).toBe(3);
   });
 
   it("work_items rejects invalid status", () => {

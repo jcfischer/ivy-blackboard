@@ -96,9 +96,18 @@ describe("createWorkItem", () => {
     expect(() => createWorkItem(db, { id: "dup", title: "Second" })).toThrow("dup");
   });
 
-  test("throws on invalid source", async () => {
+  test("throws on empty source", async () => {
     const { createWorkItem } = await import("../src/work");
-    expect(() => createWorkItem(db, { id: "bad-src", title: "Bad", source: "invalid" })).toThrow("invalid");
+    expect(() => createWorkItem(db, { id: "bad-src", title: "Bad", source: "" })).toThrow("non-empty");
+  });
+
+  test("accepts custom source types", async () => {
+    const { createWorkItem } = await import("../src/work");
+    const result = createWorkItem(db, { id: "custom-src", title: "SpecFlow task", source: "specflow" });
+    expect(result.item_id).toBe("custom-src");
+
+    const row = db.query("SELECT source FROM work_items WHERE item_id = ?").get("custom-src") as any;
+    expect(row.source).toBe("specflow");
   });
 
   test("throws on invalid priority", async () => {

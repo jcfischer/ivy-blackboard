@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
 import { sanitizeText } from "./sanitize";
-import { WORK_ITEM_SOURCES, WORK_ITEM_PRIORITIES, WORK_ITEM_STATUSES, KNOWN_EVENT_TYPES } from "./types";
+import { WORK_ITEM_PRIORITIES, WORK_ITEM_STATUSES, KNOWN_EVENT_TYPES } from "./types";
 import type { BlackboardWorkItem, BlackboardEvent, KnownEventType } from "./types";
 
 export interface CreateWorkItemOptions {
@@ -48,9 +48,9 @@ export function createWorkItem(
   const sourceRef = opts.sourceRef ?? null;
   let metadata: string | null = null;
 
-  if (!WORK_ITEM_SOURCES.includes(source as any)) {
+  if (!source || typeof source !== "string") {
     throw new BlackboardError(
-      `Invalid source "${source}". Valid values: ${WORK_ITEM_SOURCES.join(", ")}`,
+      "Source must be a non-empty string",
       "INVALID_SOURCE"
     );
   }
@@ -189,9 +189,9 @@ export function createAndClaimWorkItem(
   const sourceRef = opts.sourceRef ?? null;
   let metadata: string | null = null;
 
-  if (!WORK_ITEM_SOURCES.includes(source as any)) {
+  if (!source || typeof source !== "string") {
     throw new BlackboardError(
-      `Invalid source "${source}". Valid values: ${WORK_ITEM_SOURCES.join(", ")}`,
+      "Source must be a non-empty string",
       "INVALID_SOURCE"
     );
   }

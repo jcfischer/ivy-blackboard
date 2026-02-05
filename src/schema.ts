@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 export const PRAGMA_SQL = [
   "PRAGMA journal_mode = WAL;",
@@ -37,8 +37,7 @@ CREATE TABLE IF NOT EXISTS work_items (
     project_id    TEXT,
     title         TEXT NOT NULL,
     description   TEXT,
-    source        TEXT NOT NULL
-                  CHECK (source IN ('github', 'local', 'operator')),
+    source        TEXT NOT NULL,
     source_ref    TEXT,
     status        TEXT NOT NULL DEFAULT 'available'
                   CHECK (status IN ('available', 'claimed', 'completed', 'blocked')),
@@ -112,6 +111,8 @@ INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (2, datetime('now'), 'Remove event_type CHECK constraint');
 INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (3, datetime('now'), 'Add metadata column to heartbeats');
+INSERT OR IGNORE INTO schema_version (version, applied_at, description)
+VALUES (4, datetime('now'), 'Remove source CHECK constraint (extensible sources)');
 `;
 
 /**
@@ -147,5 +148,43 @@ CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor_id);
  */
 export const MIGRATE_V3_SQL = `
 ALTER TABLE heartbeats ADD COLUMN metadata TEXT;
+`;
+
+/**
+ * Migration SQL for v3 → v4: Remove source CHECK constraint on work_items.
+ * SQLite doesn't support ALTER CHECK constraints directly,
+ * so we recreate the work_items table without the source constraint.
+ */
+export const MIGRATE_V4_SQL = `
+CREATE TABLE work_items_v4 (
+    item_id       TEXT PRIMARY KEY,
+    project_id    TEXT,
+    title         TEXT NOT NULL,
+    description   TEXT,
+    source        TEXT NOT NULL,
+    source_ref    TEXT,
+    status        TEXT NOT NULL DEFAULT 'available'
+                  CHECK (status IN ('available', 'claimed', 'completed', 'blocked')),
+    priority      TEXT DEFAULT 'P2'
+                  CHECK (priority IN ('P1', 'P2', 'P3')),
+    claimed_by    TEXT,
+    claimed_at    TEXT,
+    completed_at  TEXT,
+    blocked_by    TEXT,
+    created_at    TEXT NOT NULL,
+    metadata      TEXT,
+
+    FOREIGN KEY (project_id) REFERENCES projects(project_id),
+    FOREIGN KEY (claimed_by) REFERENCES agents(session_id)
+);
+
+INSERT INTO work_items_v4 SELECT * FROM work_items;
+DROP TABLE work_items;
+ALTER TABLE work_items_v4 RENAME TO work_items;
+
+CREATE INDEX IF NOT EXISTS idx_work_items_status ON work_items(status);
+CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id);
+CREATE INDEX IF NOT EXISTS idx_work_items_claimed_by ON work_items(claimed_by);
+CREATE INDEX IF NOT EXISTS idx_work_items_priority ON work_items(priority, status);
 `;
 
