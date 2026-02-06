@@ -45,6 +45,8 @@ export const KNOWN_EVENT_TYPES = [
   "project_updated",
   "heartbeat_received",
   "stale_locks_released",
+  "content_blocked",
+  "content_reviewed",
 ] as const;
 export type KnownEventType = (typeof KNOWN_EVENT_TYPES)[number];
 
