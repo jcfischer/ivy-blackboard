@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "commander": "^14.0.3",
+    "pai-content-filter": "github:jcfischer/pai-content-filter",
     "zod": "^4.3.6"
   },
   "devDependencies": {
