@@ -1,12 +1,24 @@
 import type { Database } from "bun:sqlite";
 import type { Server } from "bun";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { resolve } from "node:path";
+import { homedir } from "node:os";
 import { getOverallStatus } from "./status";
 import { listAgents } from "./agent";
 import { listWorkItems, getWorkItemStatus, deleteWorkItem, updateWorkItemMetadata, appendWorkItemEvent } from "./work";
 import { listProjects, getProjectDetail } from "./project";
 import { observeEvents } from "./events";
 import type { BlackboardAgent } from "./types";
+
+/**
+ * Validate that a resolved path is within an allowed base directory.
+ * Prevents path traversal attacks (e.g., ../../etc/passwd).
+ */
+export function isPathSafe(requestedPath: string, allowedBase: string): boolean {
+  const resolved = resolve(requestedPath);
+  const normalizedBase = resolve(allowedBase);
+  return resolved.startsWith(normalizedBase + "/") || resolved === normalizedBase;
+}
 
 const ALLOWED_ORIGIN_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
@@ -43,8 +55,10 @@ function jsonResponse(data: unknown, status = 200, cors: Record<string, string> 
 export function createServer(
   db: Database,
   dbPath: string,
-  port: number = 3141
+  port: number = 3141,
+  options?: { allowedLogDirs?: string[] }
 ): Server {
+  const allowedLogDirs = options?.allowedLogDirs ?? [homedir()];
   return Bun.serve({
     port,
     async fetch(req) {
@@ -160,8 +174,17 @@ export function createServer(
             } catch {}
           }
 
-          if (!logPath || !existsSync(logPath)) {
-            return jsonResponse({ error: "No log file available", logPath }, 404, cors);
+          if (!logPath) {
+            return jsonResponse({ error: "No log file available" }, 404, cors);
+          }
+
+          // Security: prevent path traversal — only allow reads under allowed directories
+          if (!allowedLogDirs.some(base => isPathSafe(logPath!, base))) {
+            return jsonResponse({ error: "Access denied: log path outside allowed directory" }, 403, cors);
+          }
+
+          if (!existsSync(logPath)) {
+            return jsonResponse({ error: "No log file available" }, 404, cors);
           }
 
           const tailParam = url.searchParams.get("tail");

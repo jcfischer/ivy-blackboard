@@ -440,7 +440,7 @@ describe("createServer", () => {
     // Send heartbeat with logPath metadata to persist it on agents table
     sendHeartbeat(db, { sessionId: agent.session_id, metadata: JSON.stringify({ logPath: logFile }) });
 
-    server = createServer(db, dbPath, 0);
+    server = createServer(db, dbPath, 0, { allowedLogDirs: [tmpDir] });
     const res = await fetch(`http://localhost:${server.port}/api/agents/${agent.session_id}/log`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/plain");
@@ -460,7 +460,7 @@ describe("createServer", () => {
     writeFileSync(logFile, "line 1\nline 2\nline 3\nline 4\n");
     sendHeartbeat(db, { sessionId: agent.session_id, metadata: JSON.stringify({ logPath: logFile }) });
 
-    server = createServer(db, dbPath, 0);
+    server = createServer(db, dbPath, 0, { allowedLogDirs: [tmpDir] });
     const res = await fetch(`http://localhost:${server.port}/api/agents/${agent.session_id}/log?tail=2`);
     expect(res.status).toBe(200);
     const text = await res.text();
@@ -486,5 +486,89 @@ describe("createServer", () => {
     server = createServer(db, dbPath, 0);
     const res = await fetch(`http://localhost:${server.port}/api/agents/nonexistent/log`);
     expect(res.status).toBe(404);
+  });
+
+  test("GET /api/agents/:id/log returns 403 for path traversal attempt", async () => {
+    const { createServer } = await import("../src/server");
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+
+    const agent = registerAgent(db, { name: "TraversalAgent" });
+    // Attempt path traversal via logPath metadata
+    sendHeartbeat(db, {
+      sessionId: agent.session_id,
+      metadata: JSON.stringify({ logPath: join(tmpDir, "../../etc/passwd") }),
+    });
+
+    server = createServer(db, dbPath, 0, { allowedLogDirs: [tmpDir] });
+    const res = await fetch(`http://localhost:${server.port}/api/agents/${agent.session_id}/log`);
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.error).toContain("Access denied");
+  });
+
+  test("GET /api/agents/:id/log returns 403 for absolute path outside allowed dir", async () => {
+    const { createServer } = await import("../src/server");
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+
+    const agent = registerAgent(db, { name: "AbsTraversalAgent" });
+    sendHeartbeat(db, {
+      sessionId: agent.session_id,
+      metadata: JSON.stringify({ logPath: "/etc/passwd" }),
+    });
+
+    server = createServer(db, dbPath, 0, { allowedLogDirs: [tmpDir] });
+    const res = await fetch(`http://localhost:${server.port}/api/agents/${agent.session_id}/log`);
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.error).toContain("Access denied");
+  });
+
+  test("GET /api/agents/:id/log returns 403 for traversal via ../ in path", async () => {
+    const { createServer } = await import("../src/server");
+    const { registerAgent, sendHeartbeat } = await import("../src/agent");
+
+    const agent = registerAgent(db, { name: "EncodedTraversalAgent" });
+    // Path that resolves outside allowed dir via ../
+    sendHeartbeat(db, {
+      sessionId: agent.session_id,
+      metadata: JSON.stringify({ logPath: tmpDir + "/../../../etc/passwd" }),
+    });
+
+    server = createServer(db, dbPath, 0, { allowedLogDirs: [tmpDir] });
+    const res = await fetch(`http://localhost:${server.port}/api/agents/${agent.session_id}/log`);
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.ok).toBe(false);
+    expect(json.error).toContain("Access denied");
+  });
+});
+
+describe("isPathSafe", () => {
+  test("allows paths within base directory", async () => {
+    const { isPathSafe } = await import("../src/server");
+    expect(isPathSafe("/home/user/.pai/logs/agent.log", "/home/user")).toBe(true);
+  });
+
+  test("rejects paths outside base directory", async () => {
+    const { isPathSafe } = await import("../src/server");
+    expect(isPathSafe("/etc/passwd", "/home/user")).toBe(false);
+  });
+
+  test("rejects traversal via ../ within path", async () => {
+    const { isPathSafe } = await import("../src/server");
+    expect(isPathSafe("/home/user/.pai/../../etc/passwd", "/home/user")).toBe(false);
+  });
+
+  test("handles base directory itself", async () => {
+    const { isPathSafe } = await import("../src/server");
+    expect(isPathSafe("/home/user", "/home/user")).toBe(true);
+  });
+
+  test("rejects base prefix that is not a directory boundary", async () => {
+    const { isPathSafe } = await import("../src/server");
+    // /home/username should NOT match /home/user
+    expect(isPathSafe("/home/username/file.log", "/home/user")).toBe(false);
   });
 });
