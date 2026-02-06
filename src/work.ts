@@ -644,7 +644,7 @@ export function listWorkItems(
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const sql = `SELECT * FROM work_items ${where} ORDER BY priority ASC, created_at DESC`;
+  const sql = `SELECT * FROM work_items ${where} ORDER BY priority ASC, created_at ASC`;
 
   return db.query(sql).all(...params) as BlackboardWorkItem[];
 }

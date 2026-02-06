@@ -261,7 +261,7 @@ describe("listWorkItems", () => {
     expect(items[0].status).toBe("available");
   });
 
-  test("orders by priority ASC then created_at DESC", async () => {
+  test("orders by priority ASC then created_at ASC (oldest first)", async () => {
     const { createWorkItem, listWorkItems } = await import("../src/work");
 
     // Insert with explicit created_at via SQL to control ordering
@@ -271,7 +271,7 @@ describe("listWorkItems", () => {
     db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, ?)`).run("p3-new", "P3 New", "P3", "2025-01-03T00:00:00Z");
 
     const items = listWorkItems(db);
-    expect(items.map(i => i.item_id)).toEqual(["p1-item", "p2-item", "p3-new", "p3-old"]);
+    expect(items.map(i => i.item_id)).toEqual(["p1-item", "p2-item", "p3-old", "p3-new"]);
   });
 
   test("--all returns all statuses", async () => {
