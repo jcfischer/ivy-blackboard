@@ -85,10 +85,73 @@ describe("registerProject", () => {
     ).toThrow();
   });
 
-  test("throws on duplicate project_id", async () => {
+  test("upserts on duplicate project_id", async () => {
     const { registerProject } = await import("../src/project");
-    registerProject(db, { id: "dup", name: "First" });
-    expect(() => registerProject(db, { id: "dup", name: "Second" })).toThrow("dup");
+    const first = registerProject(db, { id: "dup", name: "First", path: "/old", repo: "org/old" });
+    expect(first.updated).toBe(false);
+
+    const second = registerProject(db, { id: "dup", name: "Second" });
+    expect(second.updated).toBe(true);
+    expect(second.display_name).toBe("Second");
+    // Path and repo preserved from first registration since not provided
+    expect(second.local_path).toBe("/old");
+    expect(second.remote_repo).toBe("org/old");
+    // registered_at preserved from original
+    expect(second.registered_at).toBe(first.registered_at);
+  });
+
+  test("upsert updates only provided fields", async () => {
+    const { registerProject } = await import("../src/project");
+    registerProject(db, {
+      id: "partial",
+      name: "Original",
+      path: "/original",
+      repo: "org/original",
+      metadata: '{"key":"value"}',
+    });
+
+    // Update only path, preserve everything else
+    const result = registerProject(db, {
+      id: "partial",
+      name: "Original",
+      path: "/updated",
+    });
+
+    expect(result.updated).toBe(true);
+    expect(result.local_path).toBe("/updated");
+    // repo and metadata preserved
+    expect(result.remote_repo).toBe("org/original");
+    const row = db.query("SELECT metadata FROM projects WHERE project_id = ?").get("partial") as any;
+    expect(JSON.parse(row.metadata)).toEqual({ key: "value" });
+  });
+
+  test("upsert emits project_updated event", async () => {
+    const { registerProject } = await import("../src/project");
+    registerProject(db, { id: "evt-proj", name: "First" });
+    registerProject(db, { id: "evt-proj", name: "Updated" });
+
+    const events = db.query(
+      "SELECT * FROM events WHERE target_id = ? ORDER BY timestamp ASC"
+    ).all("evt-proj") as any[];
+
+    expect(events.length).toBe(2);
+    expect(events[0].event_type).toBe("project_registered");
+    expect(events[1].event_type).toBe("project_updated");
+    expect(events[1].summary).toContain("Updated");
+  });
+
+  test("upsert can update metadata on existing project", async () => {
+    const { registerProject } = await import("../src/project");
+    registerProject(db, { id: "meta-up", name: "Meta" });
+
+    registerProject(db, {
+      id: "meta-up",
+      name: "Meta",
+      metadata: '{"specflow_enabled":true}',
+    });
+
+    const row = db.query("SELECT metadata FROM projects WHERE project_id = ?").get("meta-up") as any;
+    expect(JSON.parse(row.metadata)).toEqual({ specflow_enabled: true });
   });
 });
 

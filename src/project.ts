@@ -17,6 +17,7 @@ export interface RegisterProjectResult {
   local_path: string | null;
   remote_repo: string | null;
   registered_at: string;
+  updated: boolean;
 }
 
 export interface ProjectWithCounts {
@@ -35,8 +36,9 @@ export interface ProjectWithCounts {
 }
 
 /**
- * Register a new project.
- * Inserts project row and emits project_registered event in one transaction.
+ * Register or update a project (upsert).
+ * If the project doesn't exist, inserts and emits project_registered.
+ * If it already exists, updates provided fields and emits project_updated.
  */
 export function registerProject(
   db: Database,
@@ -60,29 +62,53 @@ export function registerProject(
     }
   }
 
-  try {
+  const existing = db
+    .query("SELECT * FROM projects WHERE project_id = ?")
+    .get(opts.id) as BlackboardProject | null;
+
+  if (existing) {
+    // Update: only overwrite fields that were explicitly provided
+    const updatedName = displayName;
+    const updatedPath = opts.path !== undefined ? localPath : existing.local_path;
+    const updatedRepo = opts.repo !== undefined ? remoteRepo : existing.remote_repo;
+    const updatedMetadata = opts.metadata !== undefined ? metadata : existing.metadata;
+
     db.transaction(() => {
       db.query(`
-        INSERT INTO projects (project_id, display_name, local_path, remote_repo, registered_at, metadata)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(opts.id, displayName, localPath, remoteRepo, now, metadata);
+        UPDATE projects
+        SET display_name = ?, local_path = ?, remote_repo = ?, metadata = ?
+        WHERE project_id = ?
+      `).run(updatedName, updatedPath, updatedRepo, updatedMetadata, opts.id);
 
-      const summary = `Project "${displayName}" registered as "${opts.id}"`;
+      const summary = `Project "${updatedName}" updated`;
       db.query(`
         INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
-        VALUES (?, 'project_registered', NULL, ?, 'project', ?)
+        VALUES (?, 'project_updated', NULL, ?, 'project', ?)
       `).run(now, opts.id, summary);
     })();
-  } catch (err: any) {
-    if (err.code === "INVALID_METADATA") throw err;
-    if (err.message?.includes("UNIQUE constraint")) {
-      throw new BlackboardError(
-        `Project already exists: ${opts.id}`,
-        "PROJECT_EXISTS"
-      );
-    }
-    throw err;
+
+    return {
+      project_id: opts.id,
+      display_name: updatedName,
+      local_path: updatedPath,
+      remote_repo: updatedRepo,
+      registered_at: existing.registered_at,
+      updated: true,
+    };
   }
+
+  db.transaction(() => {
+    db.query(`
+      INSERT INTO projects (project_id, display_name, local_path, remote_repo, registered_at, metadata)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(opts.id, displayName, localPath, remoteRepo, now, metadata);
+
+    const summary = `Project "${displayName}" registered as "${opts.id}"`;
+    db.query(`
+      INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
+      VALUES (?, 'project_registered', NULL, ?, 'project', ?)
+    `).run(now, opts.id, summary);
+  })();
 
   return {
     project_id: opts.id,
@@ -90,6 +116,7 @@ export function registerProject(
     local_path: localPath,
     remote_repo: remoteRepo,
     registered_at: now,
+    updated: false,
   };
 }
 

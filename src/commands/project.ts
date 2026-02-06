@@ -34,11 +34,12 @@ export function registerProjectCommands(
         if (ctx.options.json) {
           console.log(formatJson(result));
         } else {
-          console.log(`Registered project ${result.project_id}`);
+          const verb = result.updated ? "Updated" : "Registered";
+          console.log(`${verb} project ${result.project_id}`);
           console.log(`Name: ${result.display_name}`);
           if (result.local_path) console.log(`Path: ${result.local_path}`);
           if (result.remote_repo) console.log(`Repo: ${result.remote_repo}`);
-          console.log(`At:   ${result.registered_at}`);
+          if (!result.updated) console.log(`At:   ${result.registered_at}`);
         }
       }, () => getContext().options.json)
     );
