@@ -123,6 +123,7 @@ export function createServer(
             summary: string;
             actor_id?: string;
             metadata?: Record<string, unknown>;
+            source?: string;
           };
           const result = appendWorkItemEvent(db, itemId, body);
           return jsonResponse(result, 200, cors);

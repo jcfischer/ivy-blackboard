@@ -87,7 +87,12 @@ describe("createWorkItem", () => {
 
     const row = db.query("SELECT source_ref, metadata FROM work_items WHERE item_id = ?").get("task-4") as any;
     expect(row.source_ref).toBe("https://github.com/org/repo/issues/1");
-    expect(JSON.parse(row.metadata)).toEqual({ labels: ["bug"] });
+    const meta = JSON.parse(row.metadata);
+    expect(meta.labels).toEqual(["bug"]);
+    // External source (github) may have content filter metadata merged in
+    if (meta.human_review_required !== undefined) {
+      expect(meta.human_review_required).toBe(true);
+    }
   });
 
   test("throws on duplicate item_id", async () => {

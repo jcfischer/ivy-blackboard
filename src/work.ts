@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
 import { sanitizeText } from "./sanitize";
+import { ingestExternalContent, mergeFilterMetadata, requiresFiltering } from "./ingestion";
 import { WORK_ITEM_PRIORITIES, WORK_ITEM_STATUSES, KNOWN_EVENT_TYPES } from "./types";
 import type { BlackboardWorkItem, BlackboardEvent, KnownEventType } from "./types";
 
@@ -74,6 +75,13 @@ export function createWorkItem(
     }
   }
 
+  // Content filter: scan external-origin content at the ingestion boundary
+  if (requiresFiltering(source)) {
+    const contentToScan = [title, description].filter(Boolean).join("\n");
+    const ingestResult = ingestExternalContent(contentToScan, source, "mixed");
+    metadata = mergeFilterMetadata(metadata, ingestResult);
+  }
+
   try {
     db.transaction(() => {
       db.query(`
@@ -88,6 +96,7 @@ export function createWorkItem(
       `).run(now, opts.id, summary);
     })();
   } catch (err: any) {
+    if (err.code === "CONTENT_BLOCKED" || err.code === "CONTENT_FILTER_ERROR") throw err;
     if (err.code === "INVALID_SOURCE" || err.code === "INVALID_PRIORITY" || err.code === "INVALID_METADATA") throw err;
     if (err.message?.includes("UNIQUE constraint")) {
       throw new BlackboardError(
@@ -213,6 +222,13 @@ export function createAndClaimWorkItem(
         "INVALID_METADATA"
       );
     }
+  }
+
+  // Content filter: scan external-origin content at the ingestion boundary
+  if (requiresFiltering(source)) {
+    const contentToScan = [title, description].filter(Boolean).join("\n");
+    const ingestResult = ingestExternalContent(contentToScan, source, "mixed");
+    metadata = mergeFilterMetadata(metadata, ingestResult);
   }
 
   // Validate session exists
@@ -735,6 +751,7 @@ export interface AppendWorkItemEventOptions {
   summary: string;
   actor_id?: string;
   metadata?: Record<string, unknown>;
+  source?: string;
 }
 
 export interface AppendWorkItemEventResult {
@@ -771,6 +788,11 @@ export function appendWorkItemEvent(
   const summary = sanitizeText(opts.summary);
   if (!summary) {
     throw new BlackboardError("Event summary is required", "MISSING_SUMMARY");
+  }
+
+  // Content filter: scan event summary if source is external
+  if (opts.source && requiresFiltering(opts.source)) {
+    ingestExternalContent(summary, opts.source, "mixed");
   }
 
   let metadataJson: string | null = null;

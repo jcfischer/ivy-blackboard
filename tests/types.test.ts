@@ -58,8 +58,8 @@ describe("types", () => {
   });
 
   describe("EventType", () => {
-    it("KNOWN_EVENT_TYPES lists 18 known blackboard event types", () => {
-      expect(KNOWN_EVENT_TYPES).toHaveLength(18);
+    it("KNOWN_EVENT_TYPES lists 20 known blackboard event types", () => {
+      expect(KNOWN_EVENT_TYPES).toHaveLength(20);
       expect(KNOWN_EVENT_TYPES).toContain("agent_registered");
       expect(KNOWN_EVENT_TYPES).toContain("agent_deregistered");
       expect(KNOWN_EVENT_TYPES).toContain("agent_stale");
@@ -78,6 +78,8 @@ describe("types", () => {
       expect(KNOWN_EVENT_TYPES).toContain("project_updated");
       expect(KNOWN_EVENT_TYPES).toContain("heartbeat_received");
       expect(KNOWN_EVENT_TYPES).toContain("stale_locks_released");
+      expect(KNOWN_EVENT_TYPES).toContain("content_blocked");
+      expect(KNOWN_EVENT_TYPES).toContain("content_reviewed");
     });
 
     it("EventType is string (free-form, not constrained)", () => {
