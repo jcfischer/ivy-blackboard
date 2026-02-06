@@ -190,14 +190,26 @@ describe("createServer", () => {
     expect(json.ok).toBe(false);
   });
 
-  test("OPTIONS returns CORS headers", async () => {
+  test("OPTIONS returns CORS headers for localhost origin", async () => {
     const { createServer } = await import("../src/server");
     server = createServer(db, dbPath, 0);
     const res = await fetch(`http://localhost:${server.port}/api/status`, {
       method: "OPTIONS",
+      headers: { Origin: "http://localhost:3141" },
     });
     expect(res.status).toBe(204);
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:3141");
+  });
+
+  test("OPTIONS omits CORS origin for non-localhost origin", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+    const res = await fetch(`http://localhost:${server.port}/api/status`, {
+      method: "OPTIONS",
+      headers: { Origin: "https://evil.com" },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   test("accepts arbitrary event type filters", async () => {

@@ -8,13 +8,21 @@ import { listProjects, getProjectDetail } from "./project";
 import { observeEvents } from "./events";
 import type { BlackboardAgent } from "./types";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+const ALLOWED_ORIGIN_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
-function jsonResponse(data: unknown, status = 200): Response {
+function corsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") ?? "";
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  };
+  if (ALLOWED_ORIGIN_RE.test(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin;
+  }
+  return headers;
+}
+
+function jsonResponse(data: unknown, status = 200, cors: Record<string, string> = {}): Response {
   return new Response(
     JSON.stringify(
       { ok: status < 400, ...data, timestamp: new Date().toISOString() },
@@ -23,7 +31,7 @@ function jsonResponse(data: unknown, status = 200): Response {
     ),
     {
       status,
-      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+      headers: { "Content-Type": "application/json", ...cors },
     }
   );
 }
@@ -41,23 +49,24 @@ export function createServer(
     port,
     async fetch(req) {
       const url = new URL(req.url);
+      const cors = corsHeaders(req);
 
       // CORS preflight
       if (req.method === "OPTIONS") {
-        return new Response(null, { status: 204, headers: CORS_HEADERS });
+        return new Response(null, { status: 204, headers: cors });
       }
 
       try {
         // API routes
         if (url.pathname === "/api/status") {
-          return jsonResponse(getOverallStatus(db, dbPath));
+          return jsonResponse(getOverallStatus(db, dbPath), 200, cors);
         }
 
         if (url.pathname === "/api/agents") {
           const all = url.searchParams.get("all") === "true";
           const status = url.searchParams.get("status") ?? undefined;
           const agents = listAgents(db, { all, status });
-          return jsonResponse({ count: agents.length, items: agents });
+          return jsonResponse({ count: agents.length, items: agents }, 200, cors);
         }
 
         if (url.pathname === "/api/work") {
@@ -65,7 +74,7 @@ export function createServer(
           const status = url.searchParams.get("status") ?? undefined;
           const project = url.searchParams.get("project") ?? undefined;
           const items = listWorkItems(db, { all, status, project });
-          return jsonResponse({ count: items.length, items });
+          return jsonResponse({ count: items.length, items }, 200, cors);
         }
 
         // Work item detail / delete endpoint
@@ -76,7 +85,7 @@ export function createServer(
           if (req.method === "DELETE") {
             const force = url.searchParams.get("force") === "true";
             const result = deleteWorkItem(db, itemId, force);
-            return jsonResponse(result);
+            return jsonResponse(result, 200, cors);
           }
 
           const detail = getWorkItemStatus(db, itemId);
@@ -93,7 +102,7 @@ export function createServer(
           return jsonResponse({
             ...detail,
             agent_name,
-          });
+          }, 200, cors);
         }
 
         // Work item metadata update endpoint
@@ -102,7 +111,7 @@ export function createServer(
           const itemId = decodeURIComponent(metadataMatch[1]);
           const body = await req.json() as Record<string, unknown>;
           const result = updateWorkItemMetadata(db, itemId, body);
-          return jsonResponse(result);
+          return jsonResponse(result, 200, cors);
         }
 
         // Work item event append endpoint
@@ -116,7 +125,7 @@ export function createServer(
             metadata?: Record<string, unknown>;
           };
           const result = appendWorkItemEvent(db, itemId, body);
-          return jsonResponse(result);
+          return jsonResponse(result, 200, cors);
         }
 
         if (url.pathname === "/api/events") {
@@ -125,7 +134,7 @@ export function createServer(
           const limitStr = url.searchParams.get("limit");
           const limit = limitStr ? parseInt(limitStr, 10) : undefined;
           const events = observeEvents(db, { since, type, limit });
-          return jsonResponse({ count: events.length, items: events });
+          return jsonResponse({ count: events.length, items: events }, 200, cors);
         }
 
         // Agent log endpoint
@@ -139,7 +148,7 @@ export function createServer(
             .get(sessionId) as BlackboardAgent | null;
 
           if (!agent) {
-            return jsonResponse({ error: "Agent not found" }, 404);
+            return jsonResponse({ error: "Agent not found" }, 404, cors);
           }
 
           let logPath: string | null = null;
@@ -151,7 +160,7 @@ export function createServer(
           }
 
           if (!logPath || !existsSync(logPath)) {
-            return jsonResponse({ error: "No log file available", logPath }, 404);
+            return jsonResponse({ error: "No log file available", logPath }, 404, cors);
           }
 
           const tailParam = url.searchParams.get("tail");
@@ -178,7 +187,7 @@ export function createServer(
                 "Content-Type": "text/plain; charset=utf-8",
                 "X-Log-Size": String(size),
                 "X-Agent-Status": agent.status,
-                ...CORS_HEADERS,
+                ...cors,
               },
             });
           }
@@ -205,7 +214,7 @@ export function createServer(
               "Content-Type": "text/plain; charset=utf-8",
               "X-Log-Size": String(size),
               "X-Agent-Status": agent.status,
-              ...CORS_HEADERS,
+              ...cors,
             },
           });
         }
@@ -267,14 +276,14 @@ export function createServer(
               "Content-Type": "text/event-stream",
               "Cache-Control": "no-cache",
               Connection: "keep-alive",
-              ...CORS_HEADERS,
+              ...cors,
             },
           });
         }
 
         if (url.pathname === "/api/projects") {
           const projects = listProjects(db);
-          return jsonResponse({ count: projects.length, items: projects });
+          return jsonResponse({ count: projects.length, items: projects }, 200, cors);
         }
 
         // Project detail endpoint
@@ -282,7 +291,7 @@ export function createServer(
         if (projectMatch) {
           const projectId = decodeURIComponent(projectMatch[1]);
           const detail = getProjectDetail(db, projectId);
-          return jsonResponse(detail);
+          return jsonResponse(detail, 200, cors);
         }
 
         // Dashboard HTML
@@ -293,21 +302,22 @@ export function createServer(
               "utf8"
             );
             return new Response(html, {
-              headers: { "Content-Type": "text/html", ...CORS_HEADERS },
+              headers: { "Content-Type": "text/html", ...cors },
             });
           } catch {
             return new Response(
               "<html><body><h1>Blackboard Dashboard</h1><p>Dashboard HTML not found. Create src/web/dashboard.html</p></body></html>",
-              { headers: { "Content-Type": "text/html", ...CORS_HEADERS } }
+              { headers: { "Content-Type": "text/html", ...cors } }
             );
           }
         }
 
-        return jsonResponse({ error: "Not found" }, 404);
+        return jsonResponse({ error: "Not found" }, 404, cors);
       } catch (err: any) {
         return jsonResponse(
           { error: err.message ?? "Internal server error" },
-          err.code ? 400 : 500
+          err.code ? 400 : 500,
+          cors
         );
       }
     },

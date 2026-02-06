@@ -143,16 +143,32 @@ describe("SSE /api/events/stream", () => {
     controller.abort();
   });
 
-  test("includes CORS headers", async () => {
+  test("includes CORS headers for localhost origin", async () => {
     const { createServer } = await import("../src/server");
     server = createServer(db, dbPath, 0);
 
     const controller = new AbortController();
     const res = await fetch(`http://localhost:${server.port}/api/events/stream`, {
       signal: controller.signal,
+      headers: { Origin: "http://localhost:3141" },
     });
 
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:3141");
+
+    controller.abort();
+  });
+
+  test("omits CORS origin for non-localhost origin", async () => {
+    const { createServer } = await import("../src/server");
+    server = createServer(db, dbPath, 0);
+
+    const controller = new AbortController();
+    const res = await fetch(`http://localhost:${server.port}/api/events/stream`, {
+      signal: controller.signal,
+      headers: { Origin: "https://attacker.com" },
+    });
+
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
 
     controller.abort();
   });
