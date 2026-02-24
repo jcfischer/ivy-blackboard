@@ -585,6 +585,10 @@ export function deleteWorkItem(
   };
 }
 
+export interface WorkItemWithProject extends BlackboardWorkItem {
+  project_name: string | null;
+}
+
 export interface ListWorkItemsOptions {
   all?: boolean;
   status?: string;
@@ -604,7 +608,7 @@ export interface WorkItemDetail {
 export function listWorkItems(
   db: Database,
   opts?: ListWorkItemsOptions
-): BlackboardWorkItem[] {
+): WorkItemWithProject[] {
   const conditions: string[] = [];
   const params: any[] = [];
 
@@ -619,10 +623,10 @@ export function listWorkItems(
           );
         }
       }
-      conditions.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+      conditions.push(`w.status IN (${statuses.map(() => "?").join(", ")})`);
       params.push(...statuses);
     } else {
-      conditions.push("status = ?");
+      conditions.push("w.status = ?");
       params.push("available");
     }
   } else if (opts?.status) {
@@ -636,7 +640,7 @@ export function listWorkItems(
         );
       }
     }
-    conditions.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+    conditions.push(`w.status IN (${statuses.map(() => "?").join(", ")})`);
     params.push(...statuses);
   }
 
@@ -650,19 +654,19 @@ export function listWorkItems(
         );
       }
     }
-    conditions.push(`priority IN (${priorities.map(() => "?").join(", ")})`);
+    conditions.push(`w.priority IN (${priorities.map(() => "?").join(", ")})`);
     params.push(...priorities);
   }
 
   if (opts?.project) {
-    conditions.push("project_id = ?");
+    conditions.push("w.project_id = ?");
     params.push(opts.project);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const sql = `SELECT * FROM work_items ${where} ORDER BY priority ASC, created_at ASC`;
+  const sql = `SELECT w.*, p.display_name AS project_name FROM work_items w LEFT JOIN projects p ON w.project_id = p.project_id ${where} ORDER BY w.priority ASC, w.created_at ASC`;
 
-  return db.query(sql).all(...params) as BlackboardWorkItem[];
+  return db.query(sql).all(...params) as WorkItemWithProject[];
 }
 
 /**
