@@ -86,10 +86,10 @@
       background: #0d1117;
       border: 1px solid #30363d;
       border-radius: 6px;
-      margin-top: 16px;
-      display: none;
+      margin: 8px 0;
     }
-    .log-panel.visible { display: block; }
+    .log-panel-row { background: transparent !important; }
+    .log-panel-row:hover { background: transparent !important; }
     .log-header {
       display: flex;
       justify-content: space-between;
@@ -438,18 +438,6 @@
         <button class="work-tab" onclick="switchAgentTab('completed')">Completed <span class="tab-count" id="agent-completed-count">0</span></button>
       </div>
       <div id="agents-container"><span class="empty">Loading...</span></div>
-      <div class="log-panel" id="log-panel">
-        <div class="log-header">
-          <h3>
-            Agent Log: <span id="log-agent-name">--</span>
-            <span id="log-streaming-indicator" class="log-streaming" style="display:none;"></span>
-          </h3>
-          <button class="log-close" onclick="closeLogPanel()">Close</button>
-        </div>
-        <div class="log-content" id="log-content">
-          <span class="log-no-content">Loading log...</span>
-        </div>
-      </div>
     </div>
     <div class="card">
       <h2>Work Items</h2>
@@ -599,6 +587,22 @@
       }
     }
 
+    function logPanelRow(colCount) {
+      return `<tr class="log-panel-row"><td colspan="${colCount}" style="padding:0;border:none;">
+        <div class="log-panel visible" id="log-panel">
+          <div class="log-header">
+            <h3>Agent Log: <span id="log-agent-name">--</span>
+              <span id="log-streaming-indicator" class="log-streaming" style="display:none;"></span>
+            </h3>
+            <button class="log-close" onclick="closeLogPanel()">Close</button>
+          </div>
+          <div class="log-content" id="log-content">
+            <span class="log-no-content">Loading log...</span>
+          </div>
+        </div>
+      </td></tr>`;
+    }
+
     function renderAgents() {
       const el = document.getElementById('agents-container');
 
@@ -623,6 +627,8 @@
         return;
       }
 
+      const colCount = currentAgentTab === 'running' ? 5 : 6;
+
       if (currentAgentTab === 'running') {
         let html = '<table><tr><th>Name</th><th>Status</th><th>Project</th><th>Work</th><th>Elapsed</th></tr>';
         for (const a of agents) {
@@ -639,6 +645,7 @@
             <td class="truncate">${truncate(a.current_work, 40)}</td>
             <td class="agent-elapsed" data-started="${a.started_at}">${formatElapsed(a.started_at)}</td>
           </tr>`;
+          if (isSelected) html += logPanelRow(colCount);
         }
         html += '</table>';
         el.innerHTML = html;
@@ -666,6 +673,7 @@
             <td>${duration}</td>
             <td>${relTime(a.last_seen_at)}</td>
           </tr>`;
+          if (isSelected) html += logPanelRow(colCount);
         }
         html += '</table>';
         el.innerHTML = html;
@@ -707,14 +715,17 @@
       const agent = currentAgents.find(a => a.session_id === sessionId);
       if (!agent) return;
 
-      document.getElementById('log-agent-name').textContent =
-        `${agent.agent_name} (${truncate(agent.session_id, 12)})`;
-      document.getElementById('log-content').innerHTML = '<span class="log-no-content">Loading log...</span>';
-      document.getElementById('log-panel').classList.add('visible');
+      // Re-render agent list — this inserts the inline log panel after the selected row
+      renderAgents();
+
+      // Now populate the inline log panel (DOM elements exist after renderAgents)
+      const nameEl = document.getElementById('log-agent-name');
+      if (nameEl) nameEl.textContent = `${agent.agent_name} (${truncate(agent.session_id, 12)})`;
 
       // Show streaming indicator if agent is active
       const isActive = agent.status === 'active' || agent.status === 'idle';
-      document.getElementById('log-streaming-indicator').style.display = isActive ? 'inline-block' : 'none';
+      const streamEl = document.getElementById('log-streaming-indicator');
+      if (streamEl) streamEl.style.display = isActive ? 'inline-block' : 'none';
 
       // Fetch full log immediately
       fetchAgentLog(sessionId, false);
@@ -725,13 +736,13 @@
         logPollInterval = setInterval(() => fetchAgentLog(sessionId, true), 2000);
       }
 
-      // Re-render agent list to show selection
-      renderAgents();
+      // Scroll the log panel into view
+      const panel = document.getElementById('log-panel');
+      if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     function closeLogPanel() {
       selectedAgentId = null;
-      document.getElementById('log-panel').classList.remove('visible');
       if (logPollInterval) {
         clearInterval(logPollInterval);
         logPollInterval = null;
