@@ -851,11 +851,12 @@
       }
 
       if (currentWorkTab === 'active') {
-        let html = '<table><tr><th>Title</th><th>Status</th><th>Priority</th><th>Claimed By</th><th>Created</th></tr>';
+        let html = '<table><tr><th>Title</th><th>Project</th><th>Status</th><th>Priority</th><th>Claimed By</th><th>Created</th></tr>';
         for (const w of items) {
           const isSelected = w.item_id === selectedWorkId;
           html += '<tr class="work-row' + (isSelected ? ' selected' : '') + '" onclick="selectWork(\'' + escapeHtml(w.item_id) + '\')">'
             + '<td class="truncate">' + truncate(w.title, 40) + '</td>'
+            + '<td>' + (w.project_name ? escapeHtml(w.project_name) : '--') + '</td>'
             + '<td>' + badge(w.status) + '</td>'
             + '<td>' + w.priority + '</td>'
             + '<td>' + (w.claimed_by ? truncate(w.claimed_by, 12) : '--') + '</td>'
@@ -867,12 +868,13 @@
       } else {
         // History: sort by completed_at DESC
         const sorted = [...items].sort((a, b) => new Date(b.completed_at || 0).getTime() - new Date(a.completed_at || 0).getTime());
-        let html = '<table><tr><th>Title</th><th>Priority</th><th>Completed By</th><th>Completed</th><th>Duration</th></tr>';
+        let html = '<table><tr><th>Title</th><th>Project</th><th>Priority</th><th>Completed By</th><th>Completed</th><th>Duration</th></tr>';
         for (const w of sorted) {
           const isSelected = w.item_id === selectedWorkId;
           const duration = w.created_at && w.completed_at ? formatDuration(new Date(w.completed_at).getTime() - new Date(w.created_at).getTime()) : '--';
           html += '<tr class="work-row' + (isSelected ? ' selected' : '') + '" onclick="selectWork(\'' + escapeHtml(w.item_id) + '\')">'
             + '<td class="truncate">' + truncate(w.title, 40) + '</td>'
+            + '<td>' + (w.project_name ? escapeHtml(w.project_name) : '--') + '</td>'
             + '<td>' + w.priority + '</td>'
             + '<td>' + (w.claimed_by ? truncate(w.claimed_by, 12) : '--') + '</td>'
             + '<td>' + (w.completed_at ? relTime(w.completed_at) : '--') + '</td>'
@@ -942,7 +944,8 @@
           html += '<div class="work-meta-item"><span class="work-meta-label">Ref:</span><span class="work-meta-value">' + escapeHtml(item.source_ref) + '</span></div>';
         }
         if (item.project_id) {
-          html += '<div class="work-meta-item"><span class="work-meta-label">Project:</span><span class="work-meta-value">' + escapeHtml(item.project_id) + '</span></div>';
+          const projLabel = data.project_name || item.project_id;
+          html += '<div class="work-meta-item"><span class="work-meta-label">Project:</span><span class="work-meta-value">' + escapeHtml(projLabel) + '</span></div>';
         }
         html += '</div>';
 

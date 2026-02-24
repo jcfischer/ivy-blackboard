@@ -239,7 +239,7 @@ export function registerWorkCommands(
           const rows = items.map(i => [
             i.item_id.slice(0, 12),
             i.title,
-            i.project_id ?? "-",
+            i.project_name ?? i.project_id ?? "-",
             i.status,
             i.priority,
             i.claimed_by ? i.claimed_by.slice(0, 12) : "-",

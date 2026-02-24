@@ -113,9 +113,19 @@ export function createServer(
             agent_name = agent?.agent_name ?? null;
           }
 
+          // Enrich with project display name
+          let project_name: string | null = null;
+          if (detail.item.project_id) {
+            const proj = db
+              .query("SELECT display_name FROM projects WHERE project_id = ?")
+              .get(detail.item.project_id) as { display_name: string } | null;
+            project_name = proj?.display_name ?? null;
+          }
+
           return jsonResponse({
             ...detail,
             agent_name,
+            project_name,
           }, 200, cors);
         }
 
