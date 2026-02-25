@@ -1,22 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 
-BINARY_NAME="ivy-blackboard"
-DIST_DIR="dist"
+# ivy-blackboard runs directly via Bun (no compiled binary).
+# This script installs shell wrappers to ~/bin/.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${HOME}/bin"
 
-echo "Building ${BINARY_NAME}..."
-mkdir -p "${DIST_DIR}"
-bun build src/index.ts --compile --outfile "${DIST_DIR}/${BINARY_NAME}"
-
-echo "Signing binary (ad-hoc)..."
-xattr -cr "${DIST_DIR}/${BINARY_NAME}" 2>/dev/null || true
-codesign -f -s - "${DIST_DIR}/${BINARY_NAME}"
-
-echo "Installing to ${INSTALL_DIR}/${BINARY_NAME}..."
 mkdir -p "${INSTALL_DIR}"
-cp "${DIST_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
-xattr -cr "${INSTALL_DIR}/${BINARY_NAME}" 2>/dev/null || true
-codesign -f -s - "${INSTALL_DIR}/${BINARY_NAME}"
 
-echo "Done. $(${INSTALL_DIR}/${BINARY_NAME} --version)"
+for NAME in blackboard ivy-blackboard; do
+  cat > "${INSTALL_DIR}/${NAME}" << WRAPPER
+#!/bin/bash
+exec bun ${SCRIPT_DIR}/src/index.ts "\$@"
+WRAPPER
+  chmod +x "${INSTALL_DIR}/${NAME}"
+done
+
+echo "Installed blackboard wrappers → ${INSTALL_DIR}/{blackboard,ivy-blackboard}"
+echo "Version: $(${INSTALL_DIR}/blackboard --version)"
