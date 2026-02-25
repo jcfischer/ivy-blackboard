@@ -4,11 +4,12 @@ import { BlackboardError } from "./errors";
 
 /**
  * Sources considered internal/trusted that bypass content filtering entirely.
- * "local" and "operator" are CLI-local; "tana" and "merge-fix" are internal pipeline.
- * "github" and "specflow" are NOT here — they carry external user content and
- * should go through the filter (the evaluator pre-filters, this is defense-in-depth).
+ * "local" and "operator" are CLI-local; "tana", "merge-fix", "rework", and
+ * "code_review" are internal pipeline. "github" and "specflow" are NOT here —
+ * they carry external user content and should go through the filter (the
+ * evaluator pre-filters, this is defense-in-depth).
  */
-const TRUSTED_SOURCES = new Set(["local", "operator", "tana", "merge-fix"]);
+const TRUSTED_SOURCES = new Set(["local", "operator", "tana", "merge-fix", "rework", "code_review"]);
 
 export interface IngestResult {
   allowed: boolean;
