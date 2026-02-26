@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 export const PRAGMA_SQL = [
   "PRAGMA journal_mode = WAL;",
@@ -83,6 +83,48 @@ CREATE TABLE IF NOT EXISTS schema_version (
     applied_at    TEXT NOT NULL,
     description   TEXT
 );
+
+CREATE TABLE IF NOT EXISTS specflow_features (
+  feature_id          TEXT PRIMARY KEY,
+  project_id          TEXT NOT NULL,
+  title               TEXT NOT NULL,
+  description         TEXT,
+  phase               TEXT NOT NULL DEFAULT 'queued'
+                      CHECK (phase IN (
+                        'queued',
+                        'specifying', 'specified',
+                        'planning', 'planned',
+                        'tasking', 'tasked',
+                        'implementing', 'implemented',
+                        'completing', 'completed',
+                        'failed', 'blocked'
+                      )),
+  status              TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'active', 'succeeded', 'failed', 'blocked')),
+  current_session     TEXT,
+  worktree_path       TEXT,
+  branch_name         TEXT,
+  main_branch         TEXT DEFAULT 'main',
+  failure_count       INTEGER NOT NULL DEFAULT 0,
+  max_failures        INTEGER NOT NULL DEFAULT 3,
+  last_error          TEXT,
+  last_phase_error    TEXT,
+  specify_score       INTEGER,
+  plan_score          INTEGER,
+  implement_score     INTEGER,
+  pr_number           INTEGER,
+  pr_url              TEXT,
+  commit_sha          TEXT,
+  github_issue_number INTEGER,
+  github_issue_url    TEXT,
+  github_repo         TEXT,
+  source              TEXT NOT NULL DEFAULT 'specflow',
+  source_ref          TEXT,
+  created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  phase_started_at    TEXT,
+  completed_at        TEXT
+);
 `;
 
 export const CREATE_INDEXES_SQL = `
@@ -102,6 +144,11 @@ CREATE INDEX IF NOT EXISTS idx_heartbeats_timestamp ON heartbeats(timestamp);
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor_id);
+
+CREATE INDEX IF NOT EXISTS idx_specflow_phase    ON specflow_features(phase);
+CREATE INDEX IF NOT EXISTS idx_specflow_status   ON specflow_features(status, phase);
+CREATE INDEX IF NOT EXISTS idx_specflow_project  ON specflow_features(project_id);
+CREATE INDEX IF NOT EXISTS idx_specflow_updated  ON specflow_features(updated_at);
 `;
 
 export const SEED_VERSION_SQL = `
@@ -115,6 +162,8 @@ INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (4, datetime('now'), 'Remove source CHECK constraint (extensible sources)');
 INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (5, datetime('now'), 'Add waiting_for_response status to work_items');
+INSERT OR IGNORE INTO schema_version (version, applied_at, description)
+VALUES (6, datetime('now'), 'Add specflow_features table for centralized feature lifecycle');
 `;
 
 /**
@@ -230,5 +279,59 @@ CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id);
 CREATE INDEX IF NOT EXISTS idx_work_items_claimed_by ON work_items(claimed_by);
 CREATE INDEX IF NOT EXISTS idx_work_items_priority ON work_items(priority, status);
 PRAGMA foreign_keys = ON;
+`;
+
+/**
+ * Migration SQL for v5 → v6: Add specflow_features table.
+ * Centralized lifecycle state machine for SpecFlow features,
+ * replacing distributed work-item metadata chaining (F-027).
+ */
+export const MIGRATE_V6_SQL = `
+CREATE TABLE specflow_features (
+  feature_id          TEXT PRIMARY KEY,
+  project_id          TEXT NOT NULL,
+  title               TEXT NOT NULL,
+  description         TEXT,
+  phase               TEXT NOT NULL DEFAULT 'queued'
+                      CHECK (phase IN (
+                        'queued',
+                        'specifying', 'specified',
+                        'planning', 'planned',
+                        'tasking', 'tasked',
+                        'implementing', 'implemented',
+                        'completing', 'completed',
+                        'failed', 'blocked'
+                      )),
+  status              TEXT NOT NULL DEFAULT 'pending'
+                      CHECK (status IN ('pending', 'active', 'succeeded', 'failed', 'blocked')),
+  current_session     TEXT,
+  worktree_path       TEXT,
+  branch_name         TEXT,
+  main_branch         TEXT DEFAULT 'main',
+  failure_count       INTEGER NOT NULL DEFAULT 0,
+  max_failures        INTEGER NOT NULL DEFAULT 3,
+  last_error          TEXT,
+  last_phase_error    TEXT,
+  specify_score       INTEGER,
+  plan_score          INTEGER,
+  implement_score     INTEGER,
+  pr_number           INTEGER,
+  pr_url              TEXT,
+  commit_sha          TEXT,
+  github_issue_number INTEGER,
+  github_issue_url    TEXT,
+  github_repo         TEXT,
+  source              TEXT NOT NULL DEFAULT 'specflow',
+  source_ref          TEXT,
+  created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  phase_started_at    TEXT,
+  completed_at        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_specflow_phase    ON specflow_features(phase);
+CREATE INDEX IF NOT EXISTS idx_specflow_status   ON specflow_features(status, phase);
+CREATE INDEX IF NOT EXISTS idx_specflow_project  ON specflow_features(project_id);
+CREATE INDEX IF NOT EXISTS idx_specflow_updated  ON specflow_features(updated_at);
 `;
 

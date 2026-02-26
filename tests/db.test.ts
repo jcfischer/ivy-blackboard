@@ -153,7 +153,7 @@ describe("openDatabase", () => {
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
       )
       .all() as { name: string }[];
-    expect(tables).toHaveLength(6);
+    expect(tables).toHaveLength(7);
     expect(getSchemaVersion(db2)).toBe(CURRENT_SCHEMA_VERSION);
     closeDatabase(db2);
   });

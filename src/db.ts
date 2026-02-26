@@ -13,6 +13,7 @@ import {
   MIGRATE_V3_SQL,
   MIGRATE_V4_SQL,
   MIGRATE_V5_SQL,
+  MIGRATE_V6_SQL,
 } from "./schema";
 import type { DbOptions } from "./types";
 import { loadConfig } from "./config";
@@ -158,6 +159,11 @@ export function migrate(db: Database): void {
       version: 5,
       description: "Add waiting_for_response status to work_items",
       fn: (db) => { db.exec(MIGRATE_V5_SQL); },
+    },
+    {
+      version: 6,
+      description: "Add specflow_features table for centralized feature lifecycle",
+      fn: (db) => { db.exec(MIGRATE_V6_SQL); },
     },
   ];
 

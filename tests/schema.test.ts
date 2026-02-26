@@ -53,7 +53,8 @@ describe("schema SQL constants", () => {
     expect(names).toContain("heartbeats");
     expect(names).toContain("events");
     expect(names).toContain("schema_version");
-    expect(names).toHaveLength(6);
+    expect(names).toContain("specflow_features");
+    expect(names).toHaveLength(7);
   });
 
   it("CREATE_INDEXES_SQL creates all expected indexes", () => {
@@ -96,8 +97,8 @@ describe("schema SQL constants", () => {
     expect(version.version).toBe(1);
   });
 
-  it("CURRENT_SCHEMA_VERSION equals 5", () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(5);
+  it("CURRENT_SCHEMA_VERSION equals 6", () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(6);
   });
 });
 

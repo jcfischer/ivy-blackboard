@@ -118,6 +118,60 @@ export interface BlackboardEvent {
   metadata: string | null; // JSON blob
 }
 
+// SpecFlow feature phase values (state machine)
+export const SPECFLOW_FEATURE_PHASES = [
+  "queued",
+  "specifying", "specified",
+  "planning", "planned",
+  "tasking", "tasked",
+  "implementing", "implemented",
+  "completing", "completed",
+  "failed", "blocked",
+] as const;
+export type SpecFlowFeaturePhase = (typeof SPECFLOW_FEATURE_PHASES)[number];
+
+// SpecFlow feature status values
+export const SPECFLOW_FEATURE_STATUSES = [
+  "pending",
+  "active",
+  "succeeded",
+  "failed",
+  "blocked",
+] as const;
+export type SpecFlowFeatureStatus = (typeof SPECFLOW_FEATURE_STATUSES)[number];
+
+export interface SpecFlowFeature {
+  feature_id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  phase: SpecFlowFeaturePhase;
+  status: SpecFlowFeatureStatus;
+  current_session: string | null;
+  worktree_path: string | null;
+  branch_name: string | null;
+  main_branch: string;
+  failure_count: number;
+  max_failures: number;
+  last_error: string | null;
+  last_phase_error: string | null;
+  specify_score: number | null;
+  plan_score: number | null;
+  implement_score: number | null;
+  pr_number: number | null;
+  pr_url: string | null;
+  commit_sha: string | null;
+  github_issue_number: number | null;
+  github_issue_url: string | null;
+  github_repo: string | null;
+  source: string;
+  source_ref: string | null;
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601
+  phase_started_at: string | null;
+  completed_at: string | null;
+}
+
 export interface MigrationEntry {
   version: number;
   applied_at: string; // ISO 8601
