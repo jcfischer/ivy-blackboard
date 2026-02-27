@@ -149,6 +149,30 @@ export function updateFeature(
 }
 
 /**
+ * Upsert a specflow feature — create if not exists, otherwise update mutable fields.
+ * Used by the scheduler to track cross-project features as work items are dispatched.
+ */
+export function upsertFeature(
+  db: Database,
+  input: CreateFeatureInput
+): SpecFlowFeature {
+  const existing = getFeature(db, input.feature_id);
+  if (!existing) {
+    return createFeature(db, input);
+  }
+  // Update only the fields that were explicitly provided
+  const updates: Partial<Omit<SpecFlowFeature, "feature_id" | "created_at">> = {};
+  if (input.title) updates.title = input.title;
+  if (input.phase) updates.phase = input.phase as SpecFlowFeaturePhase;
+  if (input.status) updates.status = input.status as SpecFlowFeatureStatus;
+  if (input.project_id) updates.project_id = input.project_id;
+  if (input.github_repo) updates.github_repo = input.github_repo;
+  if (input.main_branch) updates.main_branch = input.main_branch;
+  if (input.description) updates.description = input.description;
+  return updateFeature(db, input.feature_id, updates);
+}
+
+/**
  * List specflow features with optional filters.
  */
 export function listFeatures(
