@@ -209,6 +209,14 @@ export function getActionableFeatures(
       `).all(slots) as SpecFlowFeature[]
     : [];
 
+  // Succeeded *ing phases that need a gate check (resilience: picks up after restart)
+  const awaitingGate = db.query(`
+    SELECT * FROM specflow_features
+    WHERE status = 'succeeded'
+      AND phase LIKE '%ing'
+      AND phase NOT IN ('completed', 'blocked')
+  `).all() as SpecFlowFeature[];
+
   // Features that exceeded max_failures but haven't been marked failed yet
   const overLimit = db.query(`
     SELECT * FROM specflow_features
@@ -217,5 +225,5 @@ export function getActionableFeatures(
       AND failure_count >= max_failures
   `).all() as SpecFlowFeature[];
 
-  return [...active, ...pending, ...overLimit];
+  return [...active, ...pending, ...awaitingGate, ...overLimit];
 }
