@@ -119,7 +119,7 @@ Core modules (src/*.ts)
 SQLite database (bun:sqlite)
 ```
 
-**Database tables:** `agents`, `projects`, `work_items`, `heartbeats`, `events`, `schema_version`
+**Database tables:** `agents`, `projects`, `work_items`, `heartbeats`, `events`, `schema_version`, `specflow_features`
 
 **Key design decisions:**
 
@@ -128,6 +128,8 @@ SQLite database (bun:sqlite)
 - Automatic stale agent detection via PID liveness checking
 - Content filtering (sanitizeText) on all user-supplied text fields
 - 600 permissions on database file
+- `work_items` tracks failure state: `failure_count`, `failure_reason`, `failed_at` (schema v7)
+- `specflow_features` centralizes SpecFlow feature lifecycle across projects (schema v6)
 
 ## Configuration
 
