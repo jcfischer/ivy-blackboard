@@ -14,6 +14,8 @@ export const WORK_ITEM_STATUSES = [
   "completed",
   "blocked",
   "waiting_for_response",
+  "failed",
+  "quarantined",
 ] as const;
 export type WorkItemStatus = (typeof WORK_ITEM_STATUSES)[number];
 

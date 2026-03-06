@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 export const PRAGMA_SQL = [
   "PRAGMA journal_mode = WAL;",
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS work_items (
     source        TEXT NOT NULL,
     source_ref    TEXT,
     status        TEXT NOT NULL DEFAULT 'available'
-                  CHECK (status IN ('available', 'claimed', 'completed', 'blocked', 'waiting_for_response')),
+                  CHECK (status IN ('available', 'claimed', 'completed', 'blocked', 'waiting_for_response', 'failed', 'quarantined')),
     priority      TEXT DEFAULT 'P2'
                   CHECK (priority IN ('P1', 'P2', 'P3')),
     claimed_by    TEXT,
@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS work_items (
     blocked_by    TEXT,
     created_at    TEXT NOT NULL,
     metadata      TEXT,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    failure_reason TEXT,
+    failed_at     TEXT,
 
     FOREIGN KEY (project_id) REFERENCES projects(project_id),
     FOREIGN KEY (claimed_by) REFERENCES agents(session_id)
@@ -164,6 +167,8 @@ INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (5, datetime('now'), 'Add waiting_for_response status to work_items');
 INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (6, datetime('now'), 'Add specflow_features table for centralized feature lifecycle');
+INSERT OR IGNORE INTO schema_version (version, applied_at, description)
+VALUES (7, datetime('now'), 'Add failure tracking columns and failed/quarantined statuses to work_items');
 `;
 
 /**
@@ -335,3 +340,52 @@ CREATE INDEX IF NOT EXISTS idx_specflow_project  ON specflow_features(project_id
 CREATE INDEX IF NOT EXISTS idx_specflow_updated  ON specflow_features(updated_at);
 `;
 
+
+/**
+ * Migration SQL for v6 → v7: Add failure tracking columns and 'failed'/'quarantined' statuses.
+ * SQLite doesn't support ALTER CHECK constraints directly,
+ * so we recreate the work_items table with the extended constraint and new columns.
+ */
+export const MIGRATE_V7_SQL = `
+PRAGMA foreign_keys = OFF;
+CREATE TABLE work_items_v7 (
+    item_id       TEXT PRIMARY KEY,
+    project_id    TEXT,
+    title         TEXT NOT NULL,
+    description   TEXT,
+    source        TEXT NOT NULL,
+    source_ref    TEXT,
+    status        TEXT NOT NULL DEFAULT 'available'
+                  CHECK (status IN ('available', 'claimed', 'completed', 'blocked', 'waiting_for_response', 'failed', 'quarantined')),
+    priority      TEXT DEFAULT 'P2'
+                  CHECK (priority IN ('P1', 'P2', 'P3')),
+    claimed_by    TEXT,
+    claimed_at    TEXT,
+    completed_at  TEXT,
+    blocked_by    TEXT,
+    created_at    TEXT NOT NULL,
+    metadata      TEXT,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    failure_reason TEXT,
+    failed_at     TEXT,
+
+    FOREIGN KEY (project_id) REFERENCES projects(project_id),
+    FOREIGN KEY (claimed_by) REFERENCES agents(session_id)
+);
+
+INSERT INTO work_items_v7
+SELECT
+    item_id, project_id, title, description, source, source_ref,
+    status, priority, claimed_by, claimed_at, completed_at, blocked_by,
+    created_at, metadata,
+    0, NULL, NULL
+FROM work_items;
+DROP TABLE work_items;
+ALTER TABLE work_items_v7 RENAME TO work_items;
+
+CREATE INDEX IF NOT EXISTS idx_work_items_status ON work_items(status);
+CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id);
+CREATE INDEX IF NOT EXISTS idx_work_items_claimed_by ON work_items(claimed_by);
+CREATE INDEX IF NOT EXISTS idx_work_items_priority ON work_items(priority, status);
+PRAGMA foreign_keys = ON;
+`;

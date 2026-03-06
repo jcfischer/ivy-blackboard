@@ -818,3 +818,65 @@ export function appendWorkItemEvent(
     timestamp: now,
   };
 }
+
+// ─── F-028: Failure tracking functions ───────────────────────────────────────
+
+/**
+ * Mark a work item as failed, increment its failure_count.
+ * Auto-quarantines at failure_count >= 3.
+ */
+export function failWorkItem(db: Database, itemId: string, reason: string): void {
+  db.run(
+    `UPDATE work_items SET failure_count = failure_count + 1, failed_at = datetime('now'), status = 'failed', failure_reason = ? WHERE item_id = ?`,
+    [reason, itemId]
+  );
+  const item = db.query<{ failure_count: number }>(
+    "SELECT failure_count FROM work_items WHERE item_id = ?"
+  ).get(itemId);
+  if (item && item.failure_count >= 3) {
+    quarantineWorkItem(db, itemId, `Failed ${item.failure_count} times: ${reason}`);
+  }
+}
+
+/**
+ * Permanently quarantine a work item (excluded from dispatch).
+ */
+export function quarantineWorkItem(db: Database, itemId: string, reason: string): void {
+  const now = new Date().toISOString();
+  db.transaction(() => {
+    db.run(
+      "UPDATE work_items SET status = 'quarantined', failure_reason = ? WHERE item_id = ?",
+      [reason, itemId]
+    );
+    const summary = `Work item ${itemId} quarantined: ${reason}`;
+    db.query(
+      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_quarantined', NULL, ?, 'work_item', ?)"
+    ).run(now, itemId, summary);
+  })();
+}
+
+/**
+ * Return all failed or quarantined work items, newest first.
+ */
+export function getFailedItems(db: Database): BlackboardWorkItem[] {
+  return db.query<BlackboardWorkItem>(
+    "SELECT * FROM work_items WHERE status IN ('failed', 'quarantined') ORDER BY failed_at DESC"
+  ).all();
+}
+
+/**
+ * Requeue a failed/quarantined item: reset status to available, clear failure tracking.
+ */
+export function requeueWorkItem(db: Database, itemId: string): void {
+  const now = new Date().toISOString();
+  db.transaction(() => {
+    db.run(
+      "UPDATE work_items SET status = 'available', failure_count = 0, failure_reason = NULL, failed_at = NULL WHERE item_id = ?",
+      [itemId]
+    );
+    const summary = `Work item ${itemId} requeued (failure tracking reset)`;
+    db.query(
+      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_requeued', NULL, ?, 'work_item', ?)"
+    ).run(now, itemId, summary);
+  })();
+}

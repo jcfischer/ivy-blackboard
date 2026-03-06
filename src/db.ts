@@ -14,6 +14,7 @@ import {
   MIGRATE_V4_SQL,
   MIGRATE_V5_SQL,
   MIGRATE_V6_SQL,
+  MIGRATE_V7_SQL,
 } from "./schema";
 import type { DbOptions } from "./types";
 import { loadConfig } from "./config";
@@ -164,6 +165,11 @@ export function migrate(db: Database): void {
       version: 6,
       description: "Add specflow_features table for centralized feature lifecycle",
       fn: (db) => { db.exec(MIGRATE_V6_SQL); },
+    },
+    {
+      version: 7,
+      description: "Add failure tracking columns to work_items (failure_count, failure_reason, failed_at)",
+      fn: (db) => { db.exec(MIGRATE_V7_SQL); },
     },
   ];
 
