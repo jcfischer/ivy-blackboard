@@ -115,15 +115,26 @@ export interface ClaimWorkItemResult {
   claimed_at: string | null;
 }
 
+interface ValidatedWorkItemInputs {
+  title: string;
+  description: string | null;
+  project: string | null;
+  sourceRef: string | null;
+  dependsOn: string | null;
+  source: string;
+  priority: string;
+  metadata: string | null;
+  initialStatus: string;
+}
+
 /**
- * Create a new work item.
- * Validates source/priority, inserts row, emits work_created event.
+ * Validate and prepare work item inputs.
+ * Extracts shared validation logic used by both createWorkItem and createAndClaimWorkItem.
  */
-export function createWorkItem(
+function validateAndPrepareWorkItemInputs(
   db: Database,
   opts: CreateWorkItemOptions
-): CreateWorkItemResult {
-  const now = new Date().toISOString();
+): ValidatedWorkItemInputs {
   const title = sanitizeText(opts.title);
   const source = opts.source ?? "local";
   const priority = opts.priority ?? "P2";
@@ -147,7 +158,6 @@ export function createWorkItem(
     );
   }
 
-  // Validate dependencies and determine initial status
   const initialStatus = validateDependenciesAndGetStatus(db, opts.id, dependsOn);
 
   if (opts.metadata) {
@@ -162,21 +172,44 @@ export function createWorkItem(
     }
   }
 
-  // Content filter: scan external-origin content at the ingestion boundary
   if (requiresFiltering(source)) {
     const contentToScan = [title, description].filter(Boolean).join("\n");
     const ingestResult = ingestExternalContent(contentToScan, source, "mixed");
     metadata = mergeFilterMetadata(metadata, ingestResult);
   }
 
+  return {
+    title,
+    description,
+    project,
+    sourceRef,
+    dependsOn,
+    source,
+    priority,
+    metadata,
+    initialStatus
+  };
+}
+
+/**
+ * Create a new work item.
+ * Validates source/priority, inserts row, emits work_created event.
+ */
+export function createWorkItem(
+  db: Database,
+  opts: CreateWorkItemOptions
+): CreateWorkItemResult {
+  const now = new Date().toISOString();
+  const validated = validateAndPrepareWorkItemInputs(db, opts);
+
   try {
     db.transaction(() => {
       db.query(`
         INSERT INTO work_items (item_id, project_id, title, description, source, source_ref, status, priority, depends_on, created_at, metadata)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(opts.id, project, title, description, source, sourceRef, initialStatus, priority, dependsOn, now, metadata);
+      `).run(opts.id, validated.project, validated.title, validated.description, validated.source, validated.sourceRef, validated.initialStatus, validated.priority, validated.dependsOn, now, validated.metadata);
 
-      const summary = `Work item "${title}" created as ${opts.id}`;
+      const summary = `Work item "${validated.title}" created as ${opts.id}`;
       db.query(`
         INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
         VALUES (?, 'work_created', NULL, ?, 'work_item', ?)
@@ -196,8 +229,8 @@ export function createWorkItem(
 
   return {
     item_id: opts.id,
-    title,
-    status: initialStatus,
+    title: validated.title,
+    status: validated.initialStatus,
     claimed_by: null,
     claimed_at: null,
     created_at: now,
@@ -277,50 +310,7 @@ export function createAndClaimWorkItem(
   sessionId: string
 ): CreateWorkItemResult {
   const now = new Date().toISOString();
-  const title = sanitizeText(opts.title);
-  const source = opts.source ?? "local";
-  const priority = opts.priority ?? "P2";
-  const description = opts.description ? sanitizeText(opts.description) : null;
-  const project = opts.project ?? null;
-  const sourceRef = opts.sourceRef ?? null;
-  const dependsOn = opts.dependsOn ?? null;
-  let metadata: string | null = null;
-
-  if (!source || typeof source !== "string") {
-    throw new BlackboardError(
-      "Source must be a non-empty string",
-      "INVALID_SOURCE"
-    );
-  }
-
-  if (!WORK_ITEM_PRIORITIES.includes(priority as any)) {
-    throw new BlackboardError(
-      `Invalid priority "${priority}". Valid values: ${WORK_ITEM_PRIORITIES.join(", ")}`,
-      "INVALID_PRIORITY"
-    );
-  }
-
-  // Validate dependencies and determine initial status
-  const initialStatus = validateDependenciesAndGetStatus(db, opts.id, dependsOn);
-
-  if (opts.metadata) {
-    try {
-      JSON.parse(opts.metadata);
-      metadata = opts.metadata;
-    } catch {
-      throw new BlackboardError(
-        `Invalid JSON in metadata: ${opts.metadata}`,
-        "INVALID_METADATA"
-      );
-    }
-  }
-
-  // Content filter: scan external-origin content at the ingestion boundary
-  if (requiresFiltering(source)) {
-    const contentToScan = [title, description].filter(Boolean).join("\n");
-    const ingestResult = ingestExternalContent(contentToScan, source, "mixed");
-    metadata = mergeFilterMetadata(metadata, ingestResult);
-  }
+  const validated = validateAndPrepareWorkItemInputs(db, opts);
 
   // Validate session exists
   const agent = db
@@ -338,15 +328,15 @@ export function createAndClaimWorkItem(
     db.query(`
       INSERT INTO work_items (item_id, project_id, title, description, source, source_ref, status, priority, depends_on, claimed_by, claimed_at, created_at, metadata)
       VALUES (?, ?, ?, ?, ?, ?, 'claimed', ?, ?, ?, ?, ?, ?)
-    `).run(opts.id, project, title, description, source, sourceRef, priority, dependsOn, sessionId, now, now, metadata);
+    `).run(opts.id, validated.project, validated.title, validated.description, validated.source, validated.sourceRef, validated.priority, validated.dependsOn, sessionId, now, now, validated.metadata);
 
-    const createSummary = `Work item "${title}" created as ${opts.id}`;
+    const createSummary = `Work item "${validated.title}" created as ${opts.id}`;
     db.query(`
       INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
       VALUES (?, 'work_created', ?, ?, 'work_item', ?)
     `).run(now, sessionId, opts.id, createSummary);
 
-    const claimSummary = `Work item "${title}" claimed by agent ${sessionId.slice(0, 12)}`;
+    const claimSummary = `Work item "${validated.title}" claimed by agent ${sessionId.slice(0, 12)}`;
     db.query(`
       INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
       VALUES (?, 'work_claimed', ?, ?, 'work_item', ?)
@@ -355,7 +345,7 @@ export function createAndClaimWorkItem(
 
   return {
     item_id: opts.id,
-    title,
+    title: validated.title,
     status: "claimed",
     claimed_by: sessionId,
     claimed_at: now,
