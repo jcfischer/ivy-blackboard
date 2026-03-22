@@ -48,6 +48,24 @@ export const BlackboardConfigSchema = z.object({
       stripHtmlTags: z.boolean().default(true),
     })
     .default({ maxFieldLength: 500, stripCodeBlocks: true, stripHtmlTags: true }),
+
+  scoring: z
+    .object({
+      priorityWeights: z
+        .object({
+          P1: z.number().default(100),
+          P2: z.number().default(40),
+          P3: z.number().default(10),
+        })
+        .default({ P1: 100, P2: 40, P3: 10 }),
+      boostRatePerDay: z.number().default(5),
+      maxBoost: z.number().default(50),
+    })
+    .default({
+      priorityWeights: { P1: 100, P2: 40, P3: 10 },
+      boostRatePerDay: 5,
+      maxBoost: 50,
+    }),
 });
 
 /** Fully resolved configuration type. */

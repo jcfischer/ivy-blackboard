@@ -225,6 +225,7 @@ export function registerWorkCommands(
     .option("--project <project>", "Filter by project")
     .option("--status <status>", "Filter by status (comma-separated)")
     .option("--priority <priority>", "Filter by priority (comma-separated)")
+    .option("--show-scores", "Display effective priority scores")
     .action(
       withErrorHandling((opts) => {
         const ctx = getContext();
@@ -233,6 +234,7 @@ export function registerWorkCommands(
           status: opts.status,
           priority: opts.priority,
           project: opts.project,
+          showScores: opts.showScores,
         });
 
         if (ctx.options.json) {
@@ -240,16 +242,26 @@ export function registerWorkCommands(
         } else if (items.length === 0) {
           console.log("No work items.");
         } else {
-          const headers = ["ID", "TITLE", "PROJECT", "STATUS", "PRIORITY", "CLAIMED BY", "CREATED"];
-          const rows = items.map(i => [
-            i.item_id.slice(0, 12),
-            i.title,
-            i.project_name ?? i.project_id ?? "-",
-            i.status,
-            i.priority,
-            i.claimed_by ? i.claimed_by.slice(0, 12) : "-",
-            formatRelativeTime(i.created_at),
-          ]);
+          const headers = opts.showScores
+            ? ["ID", "TITLE", "PROJECT", "STATUS", "PRIORITY", "SCORE", "CLAIMED BY", "CREATED"]
+            : ["ID", "TITLE", "PROJECT", "STATUS", "PRIORITY", "CLAIMED BY", "CREATED"];
+          const rows = items.map(i => {
+            const baseRow = [
+              i.item_id.slice(0, 12),
+              i.title,
+              i.project_name ?? i.project_id ?? "-",
+              i.status,
+              i.priority,
+            ];
+            if (opts.showScores) {
+              baseRow.push(i.effective_score?.toFixed(1) ?? "N/A");
+            }
+            baseRow.push(
+              i.claimed_by ? i.claimed_by.slice(0, 12) : "-",
+              formatRelativeTime(i.created_at)
+            );
+            return baseRow;
+          });
           console.log(formatTable(headers, rows));
         }
       }, () => getContext().options.json)

@@ -4,6 +4,7 @@ import { sanitizeText } from "./sanitize";
 import { ingestExternalContent, mergeFilterMetadata, requiresFiltering } from "./ingestion";
 import { WORK_ITEM_PRIORITIES, WORK_ITEM_STATUSES, KNOWN_EVENT_TYPES } from "./types";
 import type { BlackboardWorkItem, BlackboardEvent, KnownEventType } from "./types";
+import { loadConfig } from "./config";
 
 export interface CreateWorkItemOptions {
   id: string;
@@ -693,6 +694,7 @@ export function deleteWorkItem(
 
 export interface WorkItemWithProject extends BlackboardWorkItem {
   project_name: string | null;
+  effective_score?: number;
 }
 
 export interface ListWorkItemsOptions {
@@ -700,6 +702,7 @@ export interface ListWorkItemsOptions {
   status?: string;
   priority?: string;
   project?: string;
+  showScores?: boolean;
 }
 
 export interface WorkItemDetail {
@@ -709,12 +712,13 @@ export interface WorkItemDetail {
 
 /**
  * List work items with optional filters.
- * Default: status='available'. Order: priority ASC (P1 first), created_at DESC.
+ * Default: status='available'. Order: effective_score DESC (age-aware priority).
  */
 export function listWorkItems(
   db: Database,
   opts?: ListWorkItemsOptions
 ): WorkItemWithProject[] {
+  const config = loadConfig();
   const conditions: string[] = [];
   const params: any[] = [];
 
@@ -770,7 +774,35 @@ export function listWorkItems(
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const sql = `SELECT w.*, p.display_name AS project_name FROM work_items w LEFT JOIN projects p ON w.project_id = p.project_id ${where} ORDER BY w.priority ASC, w.created_at ASC`;
+
+  // Calculate effective score using age-aware formula:
+  // effective_score = base_priority_weight + min(age_days * boost_rate, max_boost)
+  const { priorityWeights, boostRatePerDay, maxBoost } = config.scoring;
+
+  // SQL expression to calculate age in days and apply boost
+  const ageDaysExpr = `(julianday('now') - julianday(w.created_at))`;
+  const ageBoostExpr = `MIN(${ageDaysExpr} * ${boostRatePerDay}, ${maxBoost})`;
+
+  // Map priority to base weight using CASE
+  const baseWeightExpr = `CASE w.priority
+    WHEN 'P1' THEN ${priorityWeights.P1}
+    WHEN 'P2' THEN ${priorityWeights.P2}
+    WHEN 'P3' THEN ${priorityWeights.P3}
+    ELSE 0
+  END`;
+
+  const effectiveScoreExpr = `(${baseWeightExpr} + ${ageBoostExpr})`;
+
+  const sql = `
+    SELECT
+      w.*,
+      p.display_name AS project_name
+      ${opts?.showScores ? `, ${effectiveScoreExpr} AS effective_score` : ''}
+    FROM work_items w
+    LEFT JOIN projects p ON w.project_id = p.project_id
+    ${where}
+    ORDER BY ${effectiveScoreExpr} DESC, w.created_at ASC
+  `;
 
   return db.query(sql).all(...params) as WorkItemWithProject[];
 }
