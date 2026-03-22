@@ -266,17 +266,26 @@ describe("listWorkItems", () => {
     expect(items[0].status).toBe("available");
   });
 
-  test("orders by priority ASC then created_at ASC (oldest first)", async () => {
-    const { createWorkItem, listWorkItems } = await import("../src/work");
+  test("orders by effective score DESC (age-aware priority)", async () => {
+    const { listWorkItems } = await import("../src/work");
 
-    // Insert with explicit created_at via SQL to control ordering
-    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, ?)`).run("p3-old", "P3 Old", "P3", "2025-01-01T00:00:00Z");
-    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, ?)`).run("p1-item", "P1 Item", "P1", "2025-01-02T00:00:00Z");
-    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, ?)`).run("p2-item", "P2 Item", "P2", "2025-01-02T00:00:00Z");
-    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, ?)`).run("p3-new", "P3 New", "P3", "2025-01-03T00:00:00Z");
+    // Insert with explicit created_at to test age-aware scoring
+    // Fresh P1 should rank highest (100 + 0 boost = 100)
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now'))`).run("p1-fresh", "P1 Fresh", "P1");
+
+    // Old P2 (40 + significant boost, but not enough to beat fresh P1)
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now', '-15 days'))`).run("p2-old", "P2 Old", "P2");
+
+    // Very old P3 at max boost (10 + 50 = 60, still below fresh P1)
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now', '-20 days'))`).run("p3-ancient", "P3 Ancient", "P3");
+
+    // Fresh P3 (10 + 0 = 10, lowest score)
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now'))`).run("p3-new", "P3 New", "P3");
 
     const items = listWorkItems(db);
-    expect(items.map(i => i.item_id)).toEqual(["p1-item", "p2-item", "p3-old", "p3-new"]);
+    // Expected order: p1-fresh (100), p3-ancient (60), p2-old (~40+boost), p3-new (10)
+    expect(items[0].item_id).toBe("p1-fresh");
+    expect(items[items.length - 1].item_id).toBe("p3-new");
   });
 
   test("--all returns all statuses", async () => {
@@ -1256,5 +1265,72 @@ describe("CLI work status", () => {
     expect(json.title).toBe("Status Test");
     expect(json.history).toBeArray();
     expect(json.history.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// Age-aware task scoring (Issue #43)
+describe("Age-aware task scoring", () => {
+  test("P1 at day 0 ranks higher than P3 at day 20", async () => {
+    const { listWorkItems } = await import("../src/work");
+
+    // P1 fresh (100 + 0 = 100)
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now'))`).run("p1-day0", "P1 Day 0", "P1");
+
+    // P3 at 20 days old (10 + min(20*5, 50) = 60)
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now', '-20 days'))`).run("p3-day20", "P3 Day 20", "P3");
+
+    const items = listWorkItems(db);
+    expect(items[0].item_id).toBe("p1-day0");
+    expect(items[1].item_id).toBe("p3-day20");
+  });
+
+  test("P2 at day 15 ranks higher than P2 at day 0", async () => {
+    const { listWorkItems } = await import("../src/work");
+
+    // P2 at 15 days (40 + 15*5 = 115, capped at 40+50=90)
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now', '-15 days'))`).run("p2-day15", "P2 Day 15", "P2");
+
+    // P2 fresh (40 + 0 = 40)
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now'))`).run("p2-day0", "P2 Day 0", "P2");
+
+    const items = listWorkItems(db);
+    expect(items[0].item_id).toBe("p2-day15");
+    expect(items[1].item_id).toBe("p2-day0");
+  });
+
+  test("P3 at max boost still ranks below fresh P1", async () => {
+    const { listWorkItems } = await import("../src/work");
+
+    // P1 fresh (100 + 0 = 100)
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now'))`).run("p1-fresh", "P1 Fresh", "P1");
+
+    // P3 at 100 days (10 + min(100*5, 50) = 60, capped at 50)
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now', '-100 days'))`).run("p3-max", "P3 Max Boost", "P3");
+
+    const items = listWorkItems(db);
+    expect(items[0].item_id).toBe("p1-fresh");
+    expect(items[1].item_id).toBe("p3-max");
+  });
+
+  test("Items with same effective score ordered by created_at ASC", async () => {
+    const { listWorkItems } = await import("../src/work");
+
+    // Both P1 fresh, should order by created_at
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now', '-1 second'))`).run("p1-older", "P1 Older", "P1");
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now'))`).run("p1-newer", "P1 Newer", "P1");
+
+    const items = listWorkItems(db);
+    expect(items[0].item_id).toBe("p1-older");
+    expect(items[1].item_id).toBe("p1-newer");
+  });
+
+  test("--show-scores flag displays effective scores", async () => {
+    const { listWorkItems } = await import("../src/work");
+
+    db.query(`INSERT INTO work_items (item_id, title, source, status, priority, created_at) VALUES (?, ?, 'local', 'available', ?, datetime('now'))`).run("score-test", "Score Test", "P1");
+
+    const items = listWorkItems(db, { showScores: true });
+    expect(items[0].effective_score).toBeDefined();
+    expect(items[0].effective_score).toBeGreaterThanOrEqual(100); // P1 base weight
   });
 });
