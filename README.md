@@ -155,6 +155,40 @@ Optional `blackboard.json` in the working directory:
 
 All fields have defaults -- the config file is optional.
 
+### Age-Aware Task Scoring
+
+Work items are ordered using an age-aware priority scoring formula to prevent indefinite starvation of lower-priority tasks:
+
+```
+effective_score = base_priority_weight + min(age_days * boost_rate, max_boost)
+```
+
+Where:
+- **base_priority_weight**: P1=100, P2=40, P3=10 (configurable via `scoring.priorityWeights`)
+- **boost_rate**: 5 points per day (configurable via `scoring.boostRatePerDay`)
+- **max_boost**: 50 points (configurable via `scoring.maxBoost`)
+- **age_days**: Days since work item creation
+
+This ensures:
+- Fresh P1 tasks always rank highest (100 points)
+- Older P2/P3 tasks gradually gain priority as they age
+- P3 at maximum boost (10 + 50 = 60) still ranks below fresh P1 (100)
+- No task starves indefinitely if new high-priority work keeps arriving
+
+Use `blackboard work list --show-scores` to see effective scores for debugging.
+
+Configuration example:
+
+```json
+{
+  "scoring": {
+    "priorityWeights": { "P1": 100, "P2": 40, "P3": 10 },
+    "boostRatePerDay": 5,
+    "maxBoost": 50
+  }
+}
+```
+
 ## Testing
 
 ```bash

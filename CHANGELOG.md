@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Age-aware task scoring** (#43) -- Work items now use an age-based priority boost formula to prevent indefinite starvation of lower-priority tasks. Fresh P1 tasks still rank highest, but older P2/P3 tasks gradually gain priority as they age.
+  - Configurable via `scoring.priorityWeights`, `scoring.boostRatePerDay`, `scoring.maxBoost` in config
+  - Default: P1=100, P2=40, P3=10 base weights; 5 points/day boost; 50 point max boost
+  - New `--show-scores` flag on `work list` to display effective scores
+  - Formula: `effective_score = base_weight + min(age_days * boost_rate, max_boost)`
+
 ## [0.1.0] - 2026-02-04
 
 Initial public release.
