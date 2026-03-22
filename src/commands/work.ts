@@ -22,6 +22,7 @@ export function registerWorkCommands(
     .option("--source <source>", "Source type (any string, e.g. github, local, operator, specflow)")
     .option("--source-ref <ref>", "External reference")
     .option("--priority <priority>", "Priority: P1, P2, P3")
+    .option("--depends-on <ids>", "Comma-separated list of work item IDs this item depends on")
     .option("--session <session>", "Session ID of claiming agent")
     .option("--metadata <json>", "Metadata as JSON string")
     .action(
@@ -39,6 +40,7 @@ export function registerWorkCommands(
             source: opts.source,
             sourceRef: opts.sourceRef,
             priority: opts.priority,
+            dependsOn: opts.dependsOn,
             metadata: opts.metadata,
           }, opts.session);
         } else if (opts.title) {
@@ -51,6 +53,7 @@ export function registerWorkCommands(
             source: opts.source,
             sourceRef: opts.sourceRef,
             priority: opts.priority,
+            dependsOn: opts.dependsOn,
             metadata: opts.metadata,
           });
         } else {
@@ -91,6 +94,7 @@ export function registerWorkCommands(
     .option("--source <source>", "Source type (any string, e.g. github, local, operator, specflow)")
     .option("--source-ref <ref>", "External reference")
     .option("--priority <priority>", "Priority: P1, P2, P3")
+    .option("--depends-on <ids>", "Comma-separated list of work item IDs this item depends on")
     .option("--metadata <json>", "Metadata as JSON string")
     .action(
       withErrorHandling(async (opts) => {
@@ -103,6 +107,7 @@ export function registerWorkCommands(
           source: opts.source,
           sourceRef: opts.sourceRef,
           priority: opts.priority,
+          dependsOn: opts.dependsOn,
           metadata: opts.metadata,
         });
 
@@ -271,6 +276,19 @@ export function registerWorkCommands(
           if (i.project_id) console.log(`Project:  ${i.project_id}`);
           if (i.description) console.log(`Desc:     ${i.description}`);
           if (i.claimed_by) console.log(`Claimed:  ${i.claimed_by} at ${i.claimed_at}`);
+          if (i.blocked_by) console.log(`BlockedBy: ${i.blocked_by} (manual)`);
+          if (i.depends_on) {
+            const depIds = i.depends_on.split(",").map(id => id.trim()).filter(Boolean);
+            console.log(`DependsOn: ${i.depends_on}`);
+            // Show completion status of each dependency
+            for (const depId of depIds) {
+              const dep = ctx.db.query("SELECT item_id, title, status FROM work_items WHERE item_id = ?").get(depId) as any;
+              if (dep) {
+                const statusSymbol = dep.status === 'completed' ? '✓' : '○';
+                console.log(`  ${statusSymbol} ${dep.item_id}: ${dep.title} (${dep.status})`);
+              }
+            }
+          }
           if (i.source_ref) console.log(`Ref:      ${i.source_ref}`);
           console.log(`Created:  ${i.created_at}`);
           if (detail.history.length > 0) {

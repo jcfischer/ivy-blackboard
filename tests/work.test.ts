@@ -1258,3 +1258,159 @@ describe("CLI work status", () => {
     expect(json.history.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+// T-9: Dependency tracking tests
+describe("Dependency tracking", () => {
+  test("creates item with single dependency", async () => {
+    const { createWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "dep-base", title: "Base task" });
+    const result = createWorkItem(db, {
+      id: "dep-child",
+      title: "Child task",
+      dependsOn: "dep-base"
+    });
+
+    expect(result.item_id).toBe("dep-child");
+    expect(result.status).toBe("blocked");
+
+    const row = db.query("SELECT depends_on, status FROM work_items WHERE item_id = ?").get("dep-child") as any;
+    expect(row.depends_on).toBe("dep-base");
+    expect(row.status).toBe("blocked");
+  });
+
+  test("creates item with multiple dependencies", async () => {
+    const { createWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "dep-1", title: "Task 1" });
+    createWorkItem(db, { id: "dep-2", title: "Task 2" });
+    const result = createWorkItem(db, {
+      id: "dep-multi",
+      title: "Multi-dep task",
+      dependsOn: "dep-1,dep-2"
+    });
+
+    expect(result.status).toBe("blocked");
+
+    const row = db.query("SELECT depends_on FROM work_items WHERE item_id = ?").get("dep-multi") as any;
+    expect(row.depends_on).toBe("dep-1,dep-2");
+  });
+
+  test("auto-blocks item with unmet dependency", async () => {
+    const { createWorkItem } = await import("../src/work");
+
+    createWorkItem(db, { id: "dep-pending", title: "Pending task", priority: "P1" });
+    const result = createWorkItem(db, {
+      id: "dep-blocked",
+      title: "Blocked task",
+      dependsOn: "dep-pending"
+    });
+
+    expect(result.status).toBe("blocked");
+  });
+
+  test("auto-unblocks item when all dependencies complete", async () => {
+    const { createWorkItem, completeWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    // Create base task
+    createWorkItem(db, { id: "base-1", title: "Base task" });
+
+    // Create dependent task (will be auto-blocked)
+    createWorkItem(db, {
+      id: "child-1",
+      title: "Child task",
+      dependsOn: "base-1"
+    });
+
+    const beforeRow = db.query("SELECT status FROM work_items WHERE item_id = ?").get("child-1") as any;
+    expect(beforeRow.status).toBe("blocked");
+
+    // Complete the base task
+    const agent = registerAgent(db, { name: "Completer" });
+    db.query("UPDATE work_items SET status = 'claimed', claimed_by = ? WHERE item_id = ?").run(agent.session_id, "base-1");
+    completeWorkItem(db, "base-1", agent.session_id);
+
+    // Check that child was auto-unblocked
+    const afterRow = db.query("SELECT status FROM work_items WHERE item_id = ?").get("child-1") as any;
+    expect(afterRow.status).toBe("available");
+
+    // Check that an event was emitted
+    const event = db.query(
+      "SELECT * FROM events WHERE target_id = ? AND summary LIKE '%auto-unblocked%'"
+    ).get("child-1") as any;
+    expect(event).not.toBeNull();
+  });
+
+  test("validation rejects nonexistent dependency IDs", async () => {
+    const { createWorkItem } = await import("../src/work");
+
+    expect(() => createWorkItem(db, {
+      id: "bad-dep",
+      title: "Bad dependency",
+      dependsOn: "nonexistent-id"
+    })).toThrow("Dependency not found");
+  });
+
+  test("detects and rejects direct circular dependencies", async () => {
+    const { createWorkItem } = await import("../src/work");
+
+    // Self-dependency
+    expect(() => createWorkItem(db, {
+      id: "circular-1",
+      title: "Circular task",
+      dependsOn: "circular-1"
+    })).toThrow("Circular dependency");
+  });
+
+  test("item with completed dependencies starts as available", async () => {
+    const { createWorkItem, completeWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    // Create and complete base task
+    createWorkItem(db, { id: "completed-base", title: "Completed base" });
+    const agent = registerAgent(db, { name: "Completer" });
+    db.query("UPDATE work_items SET status = 'claimed', claimed_by = ? WHERE item_id = ?").run(agent.session_id, "completed-base");
+    completeWorkItem(db, "completed-base", agent.session_id);
+
+    // Create dependent task — should be available immediately
+    const result = createWorkItem(db, {
+      id: "instant-available",
+      title: "Instantly available",
+      dependsOn: "completed-base"
+    });
+
+    expect(result.status).toBe("available");
+  });
+
+  test("multiple dependencies block until all complete", async () => {
+    const { createWorkItem, completeWorkItem } = await import("../src/work");
+    const { registerAgent } = await import("../src/agent");
+
+    createWorkItem(db, { id: "multi-dep-1", title: "Dep 1" });
+    createWorkItem(db, { id: "multi-dep-2", title: "Dep 2" });
+    createWorkItem(db, {
+      id: "multi-child",
+      title: "Multi-child",
+      dependsOn: "multi-dep-1,multi-dep-2"
+    });
+
+    const agent = registerAgent(db, { name: "Completer" });
+
+    // Complete first dependency
+    db.query("UPDATE work_items SET status = 'claimed', claimed_by = ? WHERE item_id = ?").run(agent.session_id, "multi-dep-1");
+    completeWorkItem(db, "multi-dep-1", agent.session_id);
+
+    // Child should still be blocked
+    let row = db.query("SELECT status FROM work_items WHERE item_id = ?").get("multi-child") as any;
+    expect(row.status).toBe("blocked");
+
+    // Complete second dependency
+    db.query("UPDATE work_items SET status = 'claimed', claimed_by = ? WHERE item_id = ?").run(agent.session_id, "multi-dep-2");
+    completeWorkItem(db, "multi-dep-2", agent.session_id);
+
+    // Now child should be available
+    row = db.query("SELECT status FROM work_items WHERE item_id = ?").get("multi-child") as any;
+    expect(row.status).toBe("available");
+  });
+});

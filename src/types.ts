@@ -96,8 +96,12 @@ export interface BlackboardWorkItem {
   claimed_at: string | null;
   completed_at: string | null;
   blocked_by: string | null;
+  depends_on: string | null;
   created_at: string; // ISO 8601
   metadata: string | null; // JSON blob
+  failure_count: number;
+  failure_reason: string | null;
+  failed_at: string | null;
 }
 
 export interface BlackboardHeartbeat {

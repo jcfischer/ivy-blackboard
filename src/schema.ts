@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 export const PRAGMA_SQL = [
   "PRAGMA journal_mode = WAL;",
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS work_items (
     claimed_at    TEXT,
     completed_at  TEXT,
     blocked_by    TEXT,
+    depends_on    TEXT,
     created_at    TEXT NOT NULL,
     metadata      TEXT,
     failure_count INTEGER NOT NULL DEFAULT 0,
@@ -169,6 +170,8 @@ INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (6, datetime('now'), 'Add specflow_features table for centralized feature lifecycle');
 INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (7, datetime('now'), 'Add failure tracking columns and failed/quarantined statuses to work_items');
+INSERT OR IGNORE INTO schema_version (version, applied_at, description)
+VALUES (8, datetime('now'), 'Add depends_on column for task dependency tracking');
 `;
 
 /**
@@ -388,4 +391,12 @@ CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id);
 CREATE INDEX IF NOT EXISTS idx_work_items_claimed_by ON work_items(claimed_by);
 CREATE INDEX IF NOT EXISTS idx_work_items_priority ON work_items(priority, status);
 PRAGMA foreign_keys = ON;
+`;
+
+/**
+ * Migration SQL for v7 → v8: Add depends_on column for task dependency tracking.
+ * Simple ALTER TABLE ADD COLUMN — SQLite supports this natively.
+ */
+export const MIGRATE_V8_SQL = `
+ALTER TABLE work_items ADD COLUMN depends_on TEXT;
 `;
