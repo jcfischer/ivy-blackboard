@@ -15,6 +15,89 @@ export interface CreateWorkItemOptions {
   sourceRef?: string;
   priority?: string;
   metadata?: string;
+  dependsOn?: string;
+}
+
+/**
+ * Validate dependency IDs and determine initial status.
+ * Returns "blocked" if any dependencies are incomplete, "available" otherwise.
+ */
+function validateDependenciesAndGetStatus(
+  db: Database,
+  itemId: string,
+  dependsOn: string | null
+): string {
+  if (!dependsOn) {
+    return "available";
+  }
+
+  const depIds = dependsOn.split(",").map(id => id.trim()).filter(Boolean);
+
+  // Detect direct circular dependencies (check before existence validation)
+  if (depIds.includes(itemId)) {
+    throw new BlackboardError(
+      `Circular dependency detected: ${itemId} cannot depend on itself`,
+      "CIRCULAR_DEPENDENCY"
+    );
+  }
+
+  // Validate all dependency IDs exist
+  for (const depId of depIds) {
+    const dep = db.query("SELECT item_id FROM work_items WHERE item_id = ?").get(depId);
+    if (!dep) {
+      throw new BlackboardError(
+        `Dependency not found: ${depId}`,
+        "DEPENDENCY_NOT_FOUND"
+      );
+    }
+  }
+
+  // Check if all dependencies are complete
+  const incompleteDeps = db.query(
+    `SELECT item_id FROM work_items WHERE item_id IN (${depIds.map(() => '?').join(',')}) AND status != 'completed'`
+  ).all(...depIds);
+
+  return incompleteDeps.length > 0 ? "blocked" : "available";
+}
+
+/**
+ * Check for items that depend on the given item and unblock them if all their dependencies are complete.
+ */
+function checkAndUnblockDependents(db: Database, completedItemId: string): void {
+  // Find all blocked items that have this item in their depends_on list
+  const blockedItems = db.query<BlackboardWorkItem>(
+    "SELECT * FROM work_items WHERE status = 'blocked' AND depends_on IS NOT NULL"
+  ).all();
+
+  const now = new Date().toISOString();
+
+  for (const item of blockedItems) {
+    if (!item.depends_on) continue;
+
+    const depIds = item.depends_on.split(",").map(id => id.trim()).filter(Boolean);
+
+    // Check if this item depends on the completed item
+    if (!depIds.includes(completedItemId)) continue;
+
+    // Check if ALL dependencies are now complete
+    const incompleteDeps = db.query(
+      `SELECT item_id FROM work_items WHERE item_id IN (${depIds.map(() => '?').join(',')}) AND status != 'completed'`
+    ).all(...depIds);
+
+    if (incompleteDeps.length === 0) {
+      // All dependencies are complete — unblock the item
+      db.transaction(() => {
+        db.query(
+          "UPDATE work_items SET status = 'available' WHERE item_id = ?"
+        ).run(item.item_id);
+
+        const summary = `Work item "${item.title}" auto-unblocked (all dependencies complete)`;
+        db.query(
+          "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_released', NULL, ?, 'work_item', ?)"
+        ).run(now, item.item_id, summary);
+      })();
+    }
+  }
 }
 
 export interface CreateWorkItemResult {
@@ -33,21 +116,33 @@ export interface ClaimWorkItemResult {
   claimed_at: string | null;
 }
 
+interface ValidatedWorkItemInputs {
+  title: string;
+  description: string | null;
+  project: string | null;
+  sourceRef: string | null;
+  dependsOn: string | null;
+  source: string;
+  priority: string;
+  metadata: string | null;
+  initialStatus: string;
+}
+
 /**
- * Create a new work item.
- * Validates source/priority, inserts row, emits work_created event.
+ * Validate and prepare work item inputs.
+ * Extracts shared validation logic used by both createWorkItem and createAndClaimWorkItem.
  */
-export function createWorkItem(
+function validateAndPrepareWorkItemInputs(
   db: Database,
   opts: CreateWorkItemOptions
-): CreateWorkItemResult {
-  const now = new Date().toISOString();
+): ValidatedWorkItemInputs {
   const title = sanitizeText(opts.title);
   const source = opts.source ?? "local";
   const priority = opts.priority ?? "P2";
   const description = opts.description ? sanitizeText(opts.description) : null;
   const project = opts.project ?? null;
   const sourceRef = opts.sourceRef ?? null;
+  const dependsOn = opts.dependsOn ?? null;
   let metadata: string | null = null;
 
   if (!source || typeof source !== "string") {
@@ -64,6 +159,8 @@ export function createWorkItem(
     );
   }
 
+  const initialStatus = validateDependenciesAndGetStatus(db, opts.id, dependsOn);
+
   if (opts.metadata) {
     try {
       JSON.parse(opts.metadata);
@@ -76,26 +173,74 @@ export function createWorkItem(
     }
   }
 
-  // Content filter: scan external-origin content at the ingestion boundary
   if (requiresFiltering(source)) {
     const contentToScan = [title, description].filter(Boolean).join("\n");
     const ingestResult = ingestExternalContent(contentToScan, source, "mixed");
     metadata = mergeFilterMetadata(metadata, ingestResult);
   }
 
-  try {
-    db.transaction(() => {
-      db.query(`
-        INSERT INTO work_items (item_id, project_id, title, description, source, source_ref, status, priority, created_at, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, 'available', ?, ?, ?)
-      `).run(opts.id, project, title, description, source, sourceRef, priority, now, metadata);
+  return {
+    title,
+    description,
+    project,
+    sourceRef,
+    dependsOn,
+    source,
+    priority,
+    metadata,
+    initialStatus
+  };
+}
 
-      const summary = `Work item "${title}" created as ${opts.id}`;
-      db.query(`
-        INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
-        VALUES (?, 'work_created', NULL, ?, 'work_item', ?)
-      `).run(now, opts.id, summary);
-    })();
+/**
+ * Shared helper to insert a work item and emit work_created event.
+ * Used by both createWorkItem and createAndClaimWorkItem to avoid duplication.
+ */
+function insertWorkItemWithEvent(
+  db: Database,
+  opts: {
+    id: string;
+    validated: ValidatedWorkItemInputs;
+    status: string;
+    claimed_by?: string;
+    claimed_at?: string;
+    sessionId?: string;
+  }
+): void {
+  const now = new Date().toISOString();
+  const { id, validated, status, claimed_by = null, claimed_at = null, sessionId = null } = opts;
+
+  db.transaction(() => {
+    db.query(`
+      INSERT INTO work_items (item_id, project_id, title, description, source, source_ref, status, priority, depends_on, claimed_by, claimed_at, created_at, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, validated.project, validated.title, validated.description, validated.source, validated.sourceRef, status, validated.priority, validated.dependsOn, claimed_by, claimed_at, now, validated.metadata);
+
+    const summary = `Work item "${validated.title}" created as ${id}`;
+    db.query(`
+      INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
+      VALUES (?, 'work_created', ?, ?, 'work_item', ?)
+    `).run(now, sessionId, id, summary);
+  })();
+}
+
+/**
+ * Create a new work item.
+ * Validates source/priority, inserts row, emits work_created event.
+ */
+export function createWorkItem(
+  db: Database,
+  opts: CreateWorkItemOptions
+): CreateWorkItemResult {
+  const now = new Date().toISOString();
+  const validated = validateAndPrepareWorkItemInputs(db, opts);
+
+  try {
+    insertWorkItemWithEvent(db, {
+      id: opts.id,
+      validated,
+      status: validated.initialStatus,
+    });
   } catch (err: any) {
     if (err.code === "CONTENT_BLOCKED" || err.code === "CONTENT_FILTER_ERROR") throw err;
     if (err.code === "INVALID_SOURCE" || err.code === "INVALID_PRIORITY" || err.code === "INVALID_METADATA") throw err;
@@ -110,8 +255,8 @@ export function createWorkItem(
 
   return {
     item_id: opts.id,
-    title,
-    status: "available",
+    title: validated.title,
+    status: validated.initialStatus,
     claimed_by: null,
     claimed_at: null,
     created_at: now,
@@ -191,46 +336,7 @@ export function createAndClaimWorkItem(
   sessionId: string
 ): CreateWorkItemResult {
   const now = new Date().toISOString();
-  const title = sanitizeText(opts.title);
-  const source = opts.source ?? "local";
-  const priority = opts.priority ?? "P2";
-  const description = opts.description ? sanitizeText(opts.description) : null;
-  const project = opts.project ?? null;
-  const sourceRef = opts.sourceRef ?? null;
-  let metadata: string | null = null;
-
-  if (!source || typeof source !== "string") {
-    throw new BlackboardError(
-      "Source must be a non-empty string",
-      "INVALID_SOURCE"
-    );
-  }
-
-  if (!WORK_ITEM_PRIORITIES.includes(priority as any)) {
-    throw new BlackboardError(
-      `Invalid priority "${priority}". Valid values: ${WORK_ITEM_PRIORITIES.join(", ")}`,
-      "INVALID_PRIORITY"
-    );
-  }
-
-  if (opts.metadata) {
-    try {
-      JSON.parse(opts.metadata);
-      metadata = opts.metadata;
-    } catch {
-      throw new BlackboardError(
-        `Invalid JSON in metadata: ${opts.metadata}`,
-        "INVALID_METADATA"
-      );
-    }
-  }
-
-  // Content filter: scan external-origin content at the ingestion boundary
-  if (requiresFiltering(source)) {
-    const contentToScan = [title, description].filter(Boolean).join("\n");
-    const ingestResult = ingestExternalContent(contentToScan, source, "mixed");
-    metadata = mergeFilterMetadata(metadata, ingestResult);
-  }
+  const validated = validateAndPrepareWorkItemInputs(db, opts);
 
   // Validate session exists
   const agent = db
@@ -244,28 +350,25 @@ export function createAndClaimWorkItem(
     );
   }
 
-  db.transaction(() => {
-    db.query(`
-      INSERT INTO work_items (item_id, project_id, title, description, source, source_ref, status, priority, claimed_by, claimed_at, created_at, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, 'claimed', ?, ?, ?, ?, ?)
-    `).run(opts.id, project, title, description, source, sourceRef, priority, sessionId, now, now, metadata);
+  insertWorkItemWithEvent(db, {
+    id: opts.id,
+    validated,
+    status: "claimed",
+    claimed_by: sessionId,
+    claimed_at: now,
+    sessionId,
+  });
 
-    const createSummary = `Work item "${title}" created as ${opts.id}`;
-    db.query(`
-      INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
-      VALUES (?, 'work_created', ?, ?, 'work_item', ?)
-    `).run(now, sessionId, opts.id, createSummary);
-
-    const claimSummary = `Work item "${title}" claimed by agent ${sessionId.slice(0, 12)}`;
-    db.query(`
-      INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
-      VALUES (?, 'work_claimed', ?, ?, 'work_item', ?)
-    `).run(now, sessionId, opts.id, claimSummary);
-  })();
+  // Emit work_claimed event (work_created is already emitted by insertWorkItemWithEvent)
+  const claimSummary = `Work item "${validated.title}" claimed by agent ${sessionId.slice(0, 12)}`;
+  db.query(`
+    INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
+    VALUES (?, 'work_claimed', ?, ?, 'work_item', ?)
+  `).run(now, sessionId, opts.id, claimSummary);
 
   return {
     item_id: opts.id,
-    title,
+    title: validated.title,
     status: "claimed",
     claimed_by: sessionId,
     claimed_at: now,
@@ -400,6 +503,9 @@ export function completeWorkItem(
       "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_completed', ?, ?, 'work_item', ?)"
     ).run(now, sessionId, itemId, summary);
   })();
+
+  // Auto-unblock: check for items that depend on this completed item
+  checkAndUnblockDependents(db, itemId);
 
   return { item_id: itemId, completed: true, completed_at: now, claimed_by: sessionId };
 }

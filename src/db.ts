@@ -15,6 +15,7 @@ import {
   MIGRATE_V5_SQL,
   MIGRATE_V6_SQL,
   MIGRATE_V7_SQL,
+  MIGRATE_V8_SQL,
 } from "./schema";
 import type { DbOptions } from "./types";
 import { loadConfig } from "./config";
@@ -170,6 +171,11 @@ export function migrate(db: Database): void {
       version: 7,
       description: "Add failure tracking columns to work_items (failure_count, failure_reason, failed_at)",
       fn: (db) => { db.exec(MIGRATE_V7_SQL); },
+    },
+    {
+      version: 8,
+      description: "Add depends_on column for task dependency tracking",
+      fn: (db) => { db.exec(MIGRATE_V8_SQL); },
     },
   ];
 
