@@ -192,6 +192,38 @@ function validateAndPrepareWorkItemInputs(
 }
 
 /**
+ * Shared helper to insert a work item and emit work_created event.
+ * Used by both createWorkItem and createAndClaimWorkItem to avoid duplication.
+ */
+function insertWorkItemWithEvent(
+  db: Database,
+  opts: {
+    id: string;
+    validated: ValidatedWorkItemInputs;
+    status: string;
+    claimed_by?: string;
+    claimed_at?: string;
+    sessionId?: string;
+  }
+): void {
+  const now = new Date().toISOString();
+  const { id, validated, status, claimed_by = null, claimed_at = null, sessionId = null } = opts;
+
+  db.transaction(() => {
+    db.query(`
+      INSERT INTO work_items (item_id, project_id, title, description, source, source_ref, status, priority, depends_on, claimed_by, claimed_at, created_at, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, validated.project, validated.title, validated.description, validated.source, validated.sourceRef, status, validated.priority, validated.dependsOn, claimed_by, claimed_at, now, validated.metadata);
+
+    const summary = `Work item "${validated.title}" created as ${id}`;
+    db.query(`
+      INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
+      VALUES (?, 'work_created', ?, ?, 'work_item', ?)
+    `).run(now, sessionId, id, summary);
+  })();
+}
+
+/**
  * Create a new work item.
  * Validates source/priority, inserts row, emits work_created event.
  */
@@ -203,18 +235,11 @@ export function createWorkItem(
   const validated = validateAndPrepareWorkItemInputs(db, opts);
 
   try {
-    db.transaction(() => {
-      db.query(`
-        INSERT INTO work_items (item_id, project_id, title, description, source, source_ref, status, priority, depends_on, created_at, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(opts.id, validated.project, validated.title, validated.description, validated.source, validated.sourceRef, validated.initialStatus, validated.priority, validated.dependsOn, now, validated.metadata);
-
-      const summary = `Work item "${validated.title}" created as ${opts.id}`;
-      db.query(`
-        INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
-        VALUES (?, 'work_created', NULL, ?, 'work_item', ?)
-      `).run(now, opts.id, summary);
-    })();
+    insertWorkItemWithEvent(db, {
+      id: opts.id,
+      validated,
+      status: validated.initialStatus,
+    });
   } catch (err: any) {
     if (err.code === "CONTENT_BLOCKED" || err.code === "CONTENT_FILTER_ERROR") throw err;
     if (err.code === "INVALID_SOURCE" || err.code === "INVALID_PRIORITY" || err.code === "INVALID_METADATA") throw err;
@@ -324,24 +349,21 @@ export function createAndClaimWorkItem(
     );
   }
 
-  db.transaction(() => {
-    db.query(`
-      INSERT INTO work_items (item_id, project_id, title, description, source, source_ref, status, priority, depends_on, claimed_by, claimed_at, created_at, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, 'claimed', ?, ?, ?, ?, ?, ?)
-    `).run(opts.id, validated.project, validated.title, validated.description, validated.source, validated.sourceRef, validated.priority, validated.dependsOn, sessionId, now, now, validated.metadata);
+  insertWorkItemWithEvent(db, {
+    id: opts.id,
+    validated,
+    status: "claimed",
+    claimed_by: sessionId,
+    claimed_at: now,
+    sessionId,
+  });
 
-    const createSummary = `Work item "${validated.title}" created as ${opts.id}`;
-    db.query(`
-      INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
-      VALUES (?, 'work_created', ?, ?, 'work_item', ?)
-    `).run(now, sessionId, opts.id, createSummary);
-
-    const claimSummary = `Work item "${validated.title}" claimed by agent ${sessionId.slice(0, 12)}`;
-    db.query(`
-      INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
-      VALUES (?, 'work_claimed', ?, ?, 'work_item', ?)
-    `).run(now, sessionId, opts.id, claimSummary);
-  })();
+  // Emit work_claimed event (work_created is already emitted by insertWorkItemWithEvent)
+  const claimSummary = `Work item "${validated.title}" claimed by agent ${sessionId.slice(0, 12)}`;
+  db.query(`
+    INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
+    VALUES (?, 'work_claimed', ?, ?, 'work_item', ?)
+  `).run(now, sessionId, opts.id, claimSummary);
 
   return {
     item_id: opts.id,
