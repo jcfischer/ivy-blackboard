@@ -1,4 +1,4 @@
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 export const PRAGMA_SQL = [
   "PRAGMA journal_mode = WAL;",
@@ -127,7 +127,8 @@ CREATE TABLE IF NOT EXISTS specflow_features (
   created_at          TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
   phase_started_at    TEXT,
-  completed_at        TEXT
+  completed_at        TEXT,
+  depends_on          TEXT
 );
 `;
 
@@ -172,6 +173,8 @@ INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (7, datetime('now'), 'Add failure tracking columns and failed/quarantined statuses to work_items');
 INSERT OR IGNORE INTO schema_version (version, applied_at, description)
 VALUES (8, datetime('now'), 'Add depends_on column for task dependency tracking');
+INSERT OR IGNORE INTO schema_version (version, applied_at, description)
+VALUES (9, datetime('now'), 'Add depends_on column to specflow_features for feature dependency tracking');
 `;
 
 /**
@@ -399,4 +402,12 @@ PRAGMA foreign_keys = ON;
  */
 export const MIGRATE_V8_SQL = `
 ALTER TABLE work_items ADD COLUMN depends_on TEXT;
+`;
+
+/**
+ * Migration SQL for v8 → v9: Add depends_on column to specflow_features.
+ * Stores comma-separated feature IDs (with optional projectId: prefix for cross-project).
+ */
+export const MIGRATE_V9_SQL = `
+ALTER TABLE specflow_features ADD COLUMN depends_on TEXT;
 `;

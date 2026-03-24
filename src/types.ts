@@ -176,6 +176,8 @@ export interface SpecFlowFeature {
   updated_at: string; // ISO 8601
   phase_started_at: string | null;
   completed_at: string | null;
+  /** Comma-separated feature IDs this feature depends on. May use `projectId:featureId` for cross-project. */
+  depends_on: string | null;
 }
 
 export interface MigrationEntry {
