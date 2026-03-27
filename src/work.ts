@@ -511,6 +511,161 @@ export function completeWorkItem(
 }
 
 /**
+ * Force-complete a work item, bypassing session and status checks.
+ * For operator use when manually cleaning up work items.
+ */
+export function forceCompleteWorkItem(
+  db: Database,
+  itemId: string,
+  sessionId?: string
+): CompleteWorkItemResult {
+  const item = db
+    .query("SELECT * FROM work_items WHERE item_id = ?")
+    .get(itemId) as BlackboardWorkItem | null;
+
+  if (!item) {
+    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
+  }
+
+  if (item.status === "completed") {
+    throw new BlackboardError(`Work item already completed: ${itemId}`, "ALREADY_COMPLETED");
+  }
+
+  // If session provided, validate it exists
+  if (sessionId) {
+    const agent = db
+      .query("SELECT session_id FROM agents WHERE session_id = ?")
+      .get(sessionId) as { session_id: string } | null;
+
+    if (!agent) {
+      throw new BlackboardError(`Agent session not found: ${sessionId}`, "AGENT_NOT_FOUND");
+    }
+  }
+
+  const now = new Date().toISOString();
+  const actorId = sessionId ?? null;
+
+  db.transaction(() => {
+    db.query(
+      "UPDATE work_items SET status = 'completed', completed_at = ? WHERE item_id = ?"
+    ).run(now, itemId);
+
+    const summary = sessionId
+      ? `Work item "${item.title}" force-completed by agent ${sessionId.slice(0, 12)}`
+      : `Work item "${item.title}" force-completed (operator action)`;
+    db.query(
+      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_completed', ?, ?, 'work_item', ?)"
+    ).run(now, actorId, itemId, summary);
+  })();
+
+  // Auto-unblock: check for items that depend on this completed item
+  checkAndUnblockDependents(db, itemId);
+
+  return { item_id: itemId, completed: true, completed_at: now, claimed_by: actorId ?? "operator" };
+}
+
+export interface BulkCompleteResult {
+  completed_count: number;
+  failed_count: number;
+  items: Array<{ item_id: string; success: boolean; error?: string }>;
+}
+
+/**
+ * Bulk-complete all work items for a project.
+ * Skips already-completed items, force-completes all others.
+ */
+export function bulkCompleteWorkItems(
+  db: Database,
+  projectId: string,
+  sessionId?: string
+): BulkCompleteResult {
+  const items = db
+    .query("SELECT item_id, status FROM work_items WHERE project_id = ?")
+    .all(projectId) as Array<{ item_id: string; status: string }>;
+
+  const results: Array<{ item_id: string; success: boolean; error?: string }> = [];
+  let completedCount = 0;
+  let failedCount = 0;
+
+  for (const item of items) {
+    if (item.status === "completed") {
+      // Skip already completed items
+      results.push({ item_id: item.item_id, success: true });
+      continue;
+    }
+
+    try {
+      forceCompleteWorkItem(db, item.item_id, sessionId);
+      results.push({ item_id: item.item_id, success: true });
+      completedCount++;
+    } catch (err: any) {
+      results.push({
+        item_id: item.item_id,
+        success: false,
+        error: err.message ?? String(err),
+      });
+      failedCount++;
+    }
+  }
+
+  return {
+    completed_count: completedCount,
+    failed_count: failedCount,
+    items: results,
+  };
+}
+
+export interface ResetWorkItemResult {
+  item_id: string;
+  reset: boolean;
+  previous_status: string;
+}
+
+/**
+ * Reset a work item to available status, clearing claims and failure tracking.
+ * For operator use when recovering from failed or stale claimed items.
+ */
+export function resetWorkItem(
+  db: Database,
+  itemId: string
+): ResetWorkItemResult {
+  const item = db
+    .query("SELECT * FROM work_items WHERE item_id = ?")
+    .get(itemId) as BlackboardWorkItem | null;
+
+  if (!item) {
+    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
+  }
+
+  if (item.status === "completed") {
+    throw new BlackboardError(`Cannot reset completed work item: ${itemId}`, "ALREADY_COMPLETED");
+  }
+
+  const now = new Date().toISOString();
+  const previousStatus = item.status;
+
+  db.transaction(() => {
+    db.query(
+      `UPDATE work_items SET
+        status = 'available',
+        claimed_by = NULL,
+        claimed_at = NULL,
+        failure_count = 0,
+        failure_reason = NULL,
+        failed_at = NULL
+      WHERE item_id = ?`
+    ).run(itemId);
+
+    const summary = `Work item "${item.title}" reset to available (was ${previousStatus})`;
+    db.query(
+      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_released', NULL, ?, 'work_item', ?)"
+    ).run(now, itemId, summary);
+  })();
+
+  return { item_id: itemId, reset: true, previous_status: previousStatus };
+}
+
+/**
  * Block a work item. Retains claimed_by if was claimed.
  */
 export function blockWorkItem(

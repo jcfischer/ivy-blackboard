@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { CommandContext } from "../context";
-import { createWorkItem, claimWorkItem, createAndClaimWorkItem, releaseWorkItem, completeWorkItem, blockWorkItem, unblockWorkItem, listWorkItems, getWorkItemStatus, deleteWorkItem, updateWorkItemMetadata, appendWorkItemEvent } from "../work";
+import { createWorkItem, claimWorkItem, createAndClaimWorkItem, releaseWorkItem, completeWorkItem, forceCompleteWorkItem, bulkCompleteWorkItems, resetWorkItem, blockWorkItem, unblockWorkItem, listWorkItems, getWorkItemStatus, deleteWorkItem, updateWorkItemMetadata, appendWorkItemEvent } from "../work";
 import { formatJson, formatTable, formatRelativeTime } from "../output";
 import { withErrorHandling } from "../errors";
 
@@ -141,14 +141,96 @@ export function registerWorkCommands(
     );
 
   work
-    .command("complete")
-    .description("Mark a work item as completed")
+    .command("reset")
+    .description("Reset a work item to available status (operator action)")
     .requiredOption("--id <id>", "Work item ID")
-    .requiredOption("--session <session>", "Session ID")
     .action(
       withErrorHandling((opts) => {
         const ctx = getContext();
-        const result = completeWorkItem(ctx.db, opts.id, opts.session);
+        const result = resetWorkItem(ctx.db, opts.id);
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Reset work item: ${result.item_id}`);
+          console.log(`Previous status: ${result.previous_status}`);
+          console.log(`New status: available`);
+        }
+      }, () => getContext().options.json)
+    );
+
+  work
+    .command("complete")
+    .description("Mark a work item as completed")
+    .option("--id <id>", "Work item ID (required for single item)")
+    .option("--session <session>", "Session ID (required unless --force or item unclaimed)")
+    .option("--force", "Force complete regardless of claim status")
+    .option("--project <project>", "Project ID (use with --all for bulk completion)")
+    .option("--all", "Complete all items in project (requires --project)")
+    .action(
+      withErrorHandling(async (opts) => {
+        const ctx = getContext();
+
+        // Bulk completion mode
+        if (opts.all) {
+          if (!opts.project) {
+            throw new Error("--all requires --project <project-id>");
+          }
+
+          // Confirmation prompt
+          const readline = await import("readline");
+          const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+          });
+
+          const answer = await new Promise<string>((resolve) => {
+            rl.question(
+              `This will force-complete all work items in project "${opts.project}". Continue? (yes/no): `,
+              resolve
+            );
+          });
+          rl.close();
+
+          if (answer.toLowerCase() !== "yes") {
+            console.log("Cancelled.");
+            return;
+          }
+
+          const result = bulkCompleteWorkItems(ctx.db, opts.project, opts.session);
+
+          if (ctx.options.json) {
+            console.log(formatJson(result));
+          } else {
+            console.log(`Bulk completion results for project: ${opts.project}`);
+            console.log(`Completed: ${result.completed_count}`);
+            console.log(`Failed: ${result.failed_count}`);
+            if (result.failed_count > 0) {
+              console.log("\nFailures:");
+              for (const item of result.items.filter((i) => !i.success)) {
+                console.log(`  ${item.item_id}: ${item.error}`);
+              }
+            }
+          }
+          return;
+        }
+
+        // Single item completion
+        if (!opts.id) {
+          throw new Error("--id is required for single item completion");
+        }
+
+        let result;
+        if (opts.force) {
+          // Force completion mode
+          result = forceCompleteWorkItem(ctx.db, opts.id, opts.session);
+        } else {
+          // Normal completion mode
+          if (!opts.session) {
+            throw new Error("--session is required (or use --force)");
+          }
+          result = completeWorkItem(ctx.db, opts.id, opts.session);
+        }
 
         if (ctx.options.json) {
           console.log(formatJson(result));
