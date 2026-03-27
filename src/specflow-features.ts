@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
 import type { SpecFlowFeature, SpecFlowFeaturePhase, SpecFlowFeatureStatus } from "./types";
+import { parseDependencyRef, checkDependenciesComplete, unblockDependents } from "./dependencies";
 
 export interface CreateFeatureInput {
   feature_id: string;
@@ -30,10 +31,11 @@ export interface ListFeaturesOptions {
  * Parse a dependency reference into a bare feature_id.
  * Supports both `featureId` (same-project) and `projectId:featureId` (cross-project).
  * The blackboard uses a global feature_id namespace so we look up by the bare ID.
+ *
+ * @deprecated Use parseDependencyRef from dependencies.ts instead
  */
 export function parseDependencyId(ref: string): string {
-  const colonIdx = ref.indexOf(":");
-  return colonIdx === -1 ? ref : ref.slice(colonIdx + 1);
+  return parseDependencyRef(ref);
 }
 
 /**
@@ -49,20 +51,14 @@ export function checkFeatureDependenciesComplete(
   featureId: string,
   dependsOn: string | null
 ): boolean {
-  if (!dependsOn) return true;
-
-  const depIds = dependsOn.split(",")
-    .map(s => parseDependencyId(s.trim()))
-    .filter(id => id && id !== featureId); // drop empty and self-references
-  if (depIds.length === 0) return true;
-
-  // Single batched query instead of one per dependency
-  const placeholders = depIds.map(() => "?").join(", ");
-  const rows = db.query(
-    `SELECT feature_id FROM specflow_features WHERE feature_id IN (${placeholders}) AND phase = 'completed'`
-  ).all(...depIds) as { feature_id: string }[];
-
-  return rows.length === depIds.length;
+  return checkDependenciesComplete(
+    db,
+    featureId,
+    dependsOn,
+    "specflow_features",
+    "feature_id",
+    "phase = 'completed'"
+  );
 }
 
 /**
@@ -73,33 +69,17 @@ export function unblockDependentFeatures(
   db: Database,
   completedFeatureId: string
 ): number {
-  // Pre-filter with LIKE to skip blocked features that couldn't possibly match
-  const candidates = db.query(
-    "SELECT * FROM specflow_features WHERE status = 'blocked' AND depends_on LIKE ?"
-  ).all(`%${completedFeatureId}%`) as SpecFlowFeature[];
-
-  const now = new Date().toISOString();
-  let unblocked = 0;
-
-  for (const feature of candidates) {
-    const depIds = feature.depends_on!
-      .split(",")
-      .map(s => parseDependencyId(s.trim()))
-      .filter(Boolean);
-
-    // Only process features that actually depend on the completed feature
-    if (!depIds.includes(completedFeatureId)) continue;
-
-    // Check if all dependencies are now complete
-    if (checkFeatureDependenciesComplete(db, feature.feature_id, feature.depends_on)) {
-      db.query(
-        "UPDATE specflow_features SET status = 'pending', updated_at = ? WHERE feature_id = ?"
-      ).run(now, feature.feature_id);
-      unblocked++;
-    }
-  }
-
-  return unblocked;
+  return unblockDependents(
+    db,
+    completedFeatureId,
+    "specflow_features",
+    "feature_id",
+    "status",
+    "blocked",
+    "pending",
+    "phase = 'completed'",
+    "updated_at"
+  );
 }
 
 /**

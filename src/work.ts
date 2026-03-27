@@ -5,6 +5,7 @@ import { ingestExternalContent, mergeFilterMetadata, requiresFiltering } from ".
 import { WORK_ITEM_PRIORITIES, WORK_ITEM_STATUSES, KNOWN_EVENT_TYPES } from "./types";
 import type { BlackboardWorkItem, BlackboardEvent, KnownEventType } from "./types";
 import { loadConfig } from "./config";
+import { checkDependenciesComplete, validateDependenciesExist, checkCircularDependency, unblockDependents } from "./dependencies";
 
 export interface CreateWorkItemOptions {
   id: string;
@@ -31,33 +32,23 @@ function validateDependenciesAndGetStatus(
     return "available";
   }
 
-  const depIds = dependsOn.split(",").map(id => id.trim()).filter(Boolean);
-
-  // Detect direct circular dependencies (check before existence validation)
-  if (depIds.includes(itemId)) {
-    throw new BlackboardError(
-      `Circular dependency detected: ${itemId} cannot depend on itself`,
-      "CIRCULAR_DEPENDENCY"
-    );
-  }
+  // Check for circular dependencies
+  checkCircularDependency(itemId, dependsOn);
 
   // Validate all dependency IDs exist
-  for (const depId of depIds) {
-    const dep = db.query("SELECT item_id FROM work_items WHERE item_id = ?").get(depId);
-    if (!dep) {
-      throw new BlackboardError(
-        `Dependency not found: ${depId}`,
-        "DEPENDENCY_NOT_FOUND"
-      );
-    }
-  }
+  validateDependenciesExist(db, dependsOn, "work_items", "item_id");
 
   // Check if all dependencies are complete
-  const incompleteDeps = db.query(
-    `SELECT item_id FROM work_items WHERE item_id IN (${depIds.map(() => '?').join(',')}) AND status != 'completed'`
-  ).all(...depIds);
+  const allComplete = checkDependenciesComplete(
+    db,
+    itemId,
+    dependsOn,
+    "work_items",
+    "item_id",
+    "status = 'completed'"
+  );
 
-  return incompleteDeps.length > 0 ? "blocked" : "available";
+  return allComplete ? "available" : "blocked";
 }
 
 /**
@@ -106,40 +97,44 @@ function logWorkItemEvent(
 
 /**
  * Check for items that depend on the given item and unblock them if all their dependencies are complete.
+ * Uses shared unblockDependents utility but wraps with event logging.
  */
 function checkAndUnblockDependents(db: Database, completedItemId: string): void {
-  // Find all blocked items that have this item in their depends_on list
-  const blockedItems = db.query<BlackboardWorkItem>(
-    "SELECT * FROM work_items WHERE status = 'blocked' AND depends_on IS NOT NULL"
-  ).all();
+  // Snapshot blocked items that depend on the completed item before unblocking
+  const candidates = db.query(
+    "SELECT item_id, title, depends_on FROM work_items WHERE status = 'blocked' AND depends_on LIKE ?"
+  ).all(`%${completedItemId}%`) as Array<{ item_id: string; title: string; depends_on: string }>;
 
-  const now = new Date().toISOString();
-
-  for (const item of blockedItems) {
-    if (!item.depends_on) continue;
-
+  // Filter to items that actually depend on the completed item (avoid LIKE false positives)
+  const actualDependents = candidates.filter(item => {
     const depIds = item.depends_on.split(",").map(id => id.trim()).filter(Boolean);
+    return depIds.includes(completedItemId);
+  });
 
-    // Check if this item depends on the completed item
-    if (!depIds.includes(completedItemId)) continue;
+  // Unblock eligible items using shared utility
+  const unblockedCount = unblockDependents(
+    db,
+    completedItemId,
+    "work_items",
+    "item_id",
+    "status",
+    "blocked",
+    "available",
+    "status = 'completed'"
+  );
 
-    // Check if ALL dependencies are now complete
-    const incompleteDeps = db.query(
-      `SELECT item_id FROM work_items WHERE item_id IN (${depIds.map(() => '?').join(',')}) AND status != 'completed'`
-    ).all(...depIds);
-
-    if (incompleteDeps.length === 0) {
-      // All dependencies are complete — unblock the item
-      db.transaction(() => {
-        db.query(
-          "UPDATE work_items SET status = 'available' WHERE item_id = ?"
-        ).run(item.item_id);
-
+  // Log events for items that were unblocked
+  if (unblockedCount > 0) {
+    const now = new Date().toISOString();
+    for (const item of actualDependents) {
+      // Check if this item was actually unblocked
+      const current = db.query("SELECT status FROM work_items WHERE item_id = ?").get(item.item_id) as { status: string } | null;
+      if (current?.status === "available") {
         const summary = `Work item "${item.title}" auto-unblocked (all dependencies complete)`;
         db.query(
           "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_released', NULL, ?, 'work_item', ?)"
         ).run(now, item.item_id, summary);
-      })();
+      }
     }
   }
 }
