@@ -10,6 +10,7 @@ import { registerServeCommand } from "./commands/serve";
 import { registerExportCommand } from "./commands/export";
 import { registerSweepCommand } from "./commands/sweep";
 import { registerStatusCommand } from "./commands/status";
+import { registerFeatureCommands } from "./commands/feature";
 
 const pkg = require("../package.json");
 
@@ -37,5 +38,6 @@ registerServeCommand(program, getContext);
 registerExportCommand(program, getContext);
 registerSweepCommand(program, getContext);
 registerStatusCommand(program, getContext);
+registerFeatureCommands(program, getContext);
 
 program.parse();
