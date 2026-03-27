@@ -83,7 +83,8 @@ blackboard serve --port 3141
 | `work create` | Create a work item |
 | `work claim` | Claim a work item |
 | `work release` | Release a claimed work item |
-| `work complete` | Mark a work item as completed |
+| `work complete` | Mark a work item as completed (supports --force and --all) |
+| `work reset` | Reset a work item to available status |
 | `work block` | Block a work item |
 | `work unblock` | Unblock a work item |
 | `work list` | List work items |
