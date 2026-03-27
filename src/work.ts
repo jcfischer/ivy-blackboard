@@ -61,6 +61,50 @@ function validateDependenciesAndGetStatus(
 }
 
 /**
+ * Shared helper: Get a work item by ID or throw WORK_ITEM_NOT_FOUND error.
+ */
+function getWorkItemOrThrow(db: Database, itemId: string): BlackboardWorkItem {
+  const item = db
+    .query("SELECT * FROM work_items WHERE item_id = ?")
+    .get(itemId) as BlackboardWorkItem | null;
+
+  if (!item) {
+    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
+  }
+
+  return item;
+}
+
+/**
+ * Shared helper: Validate that a session exists or throw AGENT_NOT_FOUND error.
+ */
+function validateSessionOrThrow(db: Database, sessionId: string): void {
+  const agent = db
+    .query("SELECT session_id FROM agents WHERE session_id = ?")
+    .get(sessionId) as { session_id: string } | null;
+
+  if (!agent) {
+    throw new BlackboardError(`Agent session not found: ${sessionId}`, "AGENT_NOT_FOUND");
+  }
+}
+
+/**
+ * Shared helper: Log a work item event to the events table.
+ */
+function logWorkItemEvent(
+  db: Database,
+  eventType: KnownEventType,
+  itemId: string,
+  summary: string,
+  actorId: string | null = null
+): void {
+  const now = new Date().toISOString();
+  db.query(
+    "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, ?, ?, ?, 'work_item', ?)"
+  ).run(now, eventType, actorId, itemId, summary);
+}
+
+/**
  * Check for items that depend on the given item and unblock them if all their dependencies are complete.
  */
 function checkAndUnblockDependents(db: Database, completedItemId: string): void {
@@ -272,17 +316,7 @@ export function claimWorkItem(
   itemId: string,
   sessionId: string
 ): ClaimWorkItemResult {
-  // Validate session exists
-  const agent = db
-    .query("SELECT session_id FROM agents WHERE session_id = ?")
-    .get(sessionId) as { session_id: string } | null;
-
-  if (!agent) {
-    throw new BlackboardError(
-      `Agent session not found: ${sessionId}`,
-      "AGENT_NOT_FOUND"
-    );
-  }
+  validateSessionOrThrow(db, sessionId);
 
   // Validate item exists
   const item = db
@@ -314,10 +348,7 @@ export function claimWorkItem(
 
   // Emit event
   const summary = `Work item "${item.title}" claimed by agent ${sessionId.slice(0, 12)}`;
-  db.query(`
-    INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
-    VALUES (?, 'work_claimed', ?, ?, 'work_item', ?)
-  `).run(now, sessionId, itemId, summary);
+  logWorkItemEvent(db, "work_claimed", itemId, summary, sessionId);
 
   return {
     item_id: itemId,
@@ -338,17 +369,7 @@ export function createAndClaimWorkItem(
   const now = new Date().toISOString();
   const validated = validateAndPrepareWorkItemInputs(db, opts);
 
-  // Validate session exists
-  const agent = db
-    .query("SELECT session_id FROM agents WHERE session_id = ?")
-    .get(sessionId) as { session_id: string } | null;
-
-  if (!agent) {
-    throw new BlackboardError(
-      `Agent session not found: ${sessionId}`,
-      "AGENT_NOT_FOUND"
-    );
-  }
+  validateSessionOrThrow(db, sessionId);
 
   insertWorkItemWithEvent(db, {
     id: opts.id,
@@ -361,10 +382,7 @@ export function createAndClaimWorkItem(
 
   // Emit work_claimed event (work_created is already emitted by insertWorkItemWithEvent)
   const claimSummary = `Work item "${validated.title}" claimed by agent ${sessionId.slice(0, 12)}`;
-  db.query(`
-    INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary)
-    VALUES (?, 'work_claimed', ?, ?, 'work_item', ?)
-  `).run(now, sessionId, opts.id, claimSummary);
+  logWorkItemEvent(db, "work_claimed", opts.id, claimSummary, sessionId);
 
   return {
     item_id: opts.id,
@@ -410,21 +428,8 @@ export function releaseWorkItem(
   itemId: string,
   sessionId: string
 ): ReleaseWorkItemResult {
-  const item = db
-    .query("SELECT * FROM work_items WHERE item_id = ?")
-    .get(itemId) as BlackboardWorkItem | null;
-
-  if (!item) {
-    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
-  }
-
-  const agent = db
-    .query("SELECT session_id FROM agents WHERE session_id = ?")
-    .get(sessionId) as { session_id: string } | null;
-
-  if (!agent) {
-    throw new BlackboardError(`Agent session not found: ${sessionId}`, "AGENT_NOT_FOUND");
-  }
+  const item = getWorkItemOrThrow(db, itemId);
+  validateSessionOrThrow(db, sessionId);
 
   if (item.status === "completed") {
     throw new BlackboardError(`Work item already completed: ${itemId}`, "ALREADY_COMPLETED");
@@ -438,7 +443,6 @@ export function releaseWorkItem(
     throw new BlackboardError(`Work item not claimed by session: ${sessionId}`, "NOT_CLAIMED_BY_SESSION");
   }
 
-  const now = new Date().toISOString();
   const previousStatus = item.status;
 
   db.transaction(() => {
@@ -447,12 +451,45 @@ export function releaseWorkItem(
     ).run(itemId);
 
     const summary = `Work item "${item.title}" released by agent ${sessionId.slice(0, 12)}`;
-    db.query(
-      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_released', ?, ?, 'work_item', ?)"
-    ).run(now, sessionId, itemId, summary);
+    logWorkItemEvent(db, "work_released", itemId, summary, sessionId);
   })();
 
   return { item_id: itemId, released: true, previous_status: previousStatus };
+}
+
+/**
+ * Core completion logic shared by completeWorkItem and forceCompleteWorkItem.
+ * Updates status, logs event, and triggers dependency unblocking.
+ */
+function completeWorkItemCore(
+  db: Database,
+  item: BlackboardWorkItem,
+  actorId: string | null,
+  forced: boolean = false
+): CompleteWorkItemResult {
+  const now = new Date().toISOString();
+
+  db.transaction(() => {
+    db.query(
+      "UPDATE work_items SET status = 'completed', completed_at = ? WHERE item_id = ?"
+    ).run(now, item.item_id);
+
+    const actionType = forced ? "force-completed" : "completed";
+    const summary = actorId
+      ? `Work item "${item.title}" ${actionType} by agent ${actorId.slice(0, 12)}`
+      : `Work item "${item.title}" ${actionType} (operator action)`;
+    logWorkItemEvent(db, "work_completed", item.item_id, summary, actorId);
+  })();
+
+  // Auto-unblock: check for items that depend on this completed item
+  checkAndUnblockDependents(db, item.item_id);
+
+  return {
+    item_id: item.item_id,
+    completed: true,
+    completed_at: now,
+    claimed_by: actorId ?? "operator"
+  };
 }
 
 /**
@@ -463,21 +500,8 @@ export function completeWorkItem(
   itemId: string,
   sessionId: string
 ): CompleteWorkItemResult {
-  const item = db
-    .query("SELECT * FROM work_items WHERE item_id = ?")
-    .get(itemId) as BlackboardWorkItem | null;
-
-  if (!item) {
-    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
-  }
-
-  const agent = db
-    .query("SELECT session_id FROM agents WHERE session_id = ?")
-    .get(sessionId) as { session_id: string } | null;
-
-  if (!agent) {
-    throw new BlackboardError(`Agent session not found: ${sessionId}`, "AGENT_NOT_FOUND");
-  }
+  const item = getWorkItemOrThrow(db, itemId);
+  validateSessionOrThrow(db, sessionId);
 
   if (item.status === "completed") {
     throw new BlackboardError(`Work item already completed: ${itemId}`, "ALREADY_COMPLETED");
@@ -491,23 +515,7 @@ export function completeWorkItem(
     throw new BlackboardError(`Work item not claimed by session: ${sessionId}`, "NOT_CLAIMED_BY_SESSION");
   }
 
-  const now = new Date().toISOString();
-
-  db.transaction(() => {
-    db.query(
-      "UPDATE work_items SET status = 'completed', completed_at = ? WHERE item_id = ?"
-    ).run(now, itemId);
-
-    const summary = `Work item "${item.title}" completed by agent ${sessionId.slice(0, 12)}`;
-    db.query(
-      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_completed', ?, ?, 'work_item', ?)"
-    ).run(now, sessionId, itemId, summary);
-  })();
-
-  // Auto-unblock: check for items that depend on this completed item
-  checkAndUnblockDependents(db, itemId);
-
-  return { item_id: itemId, completed: true, completed_at: now, claimed_by: sessionId };
+  return completeWorkItemCore(db, item, sessionId, false);
 }
 
 /**
@@ -519,13 +527,7 @@ export function forceCompleteWorkItem(
   itemId: string,
   sessionId?: string
 ): CompleteWorkItemResult {
-  const item = db
-    .query("SELECT * FROM work_items WHERE item_id = ?")
-    .get(itemId) as BlackboardWorkItem | null;
-
-  if (!item) {
-    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
-  }
+  const item = getWorkItemOrThrow(db, itemId);
 
   if (item.status === "completed") {
     throw new BlackboardError(`Work item already completed: ${itemId}`, "ALREADY_COMPLETED");
@@ -533,35 +535,10 @@ export function forceCompleteWorkItem(
 
   // If session provided, validate it exists
   if (sessionId) {
-    const agent = db
-      .query("SELECT session_id FROM agents WHERE session_id = ?")
-      .get(sessionId) as { session_id: string } | null;
-
-    if (!agent) {
-      throw new BlackboardError(`Agent session not found: ${sessionId}`, "AGENT_NOT_FOUND");
-    }
+    validateSessionOrThrow(db, sessionId);
   }
 
-  const now = new Date().toISOString();
-  const actorId = sessionId ?? null;
-
-  db.transaction(() => {
-    db.query(
-      "UPDATE work_items SET status = 'completed', completed_at = ? WHERE item_id = ?"
-    ).run(now, itemId);
-
-    const summary = sessionId
-      ? `Work item "${item.title}" force-completed by agent ${sessionId.slice(0, 12)}`
-      : `Work item "${item.title}" force-completed (operator action)`;
-    db.query(
-      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_completed', ?, ?, 'work_item', ?)"
-    ).run(now, actorId, itemId, summary);
-  })();
-
-  // Auto-unblock: check for items that depend on this completed item
-  checkAndUnblockDependents(db, itemId);
-
-  return { item_id: itemId, completed: true, completed_at: now, claimed_by: actorId ?? "operator" };
+  return completeWorkItemCore(db, item, sessionId ?? null, true);
 }
 
 export interface BulkCompleteResult {
@@ -629,22 +606,16 @@ export function resetWorkItem(
   db: Database,
   itemId: string
 ): ResetWorkItemResult {
-  const item = db
-    .query("SELECT * FROM work_items WHERE item_id = ?")
-    .get(itemId) as BlackboardWorkItem | null;
-
-  if (!item) {
-    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
-  }
+  const item = getWorkItemOrThrow(db, itemId);
 
   if (item.status === "completed") {
     throw new BlackboardError(`Cannot reset completed work item: ${itemId}`, "ALREADY_COMPLETED");
   }
 
-  const now = new Date().toISOString();
   const previousStatus = item.status;
 
   db.transaction(() => {
+    // Core release logic: set to available and clear claim
     db.query(
       `UPDATE work_items SET
         status = 'available',
@@ -657,9 +628,7 @@ export function resetWorkItem(
     ).run(itemId);
 
     const summary = `Work item "${item.title}" reset to available (was ${previousStatus})`;
-    db.query(
-      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_released', NULL, ?, 'work_item', ?)"
-    ).run(now, itemId, summary);
+    logWorkItemEvent(db, "work_released", itemId, summary, null);
   })();
 
   return { item_id: itemId, reset: true, previous_status: previousStatus };
@@ -673,19 +642,12 @@ export function blockWorkItem(
   itemId: string,
   opts?: { blockedBy?: string }
 ): BlockWorkItemResult {
-  const item = db
-    .query("SELECT * FROM work_items WHERE item_id = ?")
-    .get(itemId) as BlackboardWorkItem | null;
-
-  if (!item) {
-    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
-  }
+  const item = getWorkItemOrThrow(db, itemId);
 
   if (item.status === "completed") {
     throw new BlackboardError(`Work item already completed: ${itemId}`, "ALREADY_COMPLETED");
   }
 
-  const now = new Date().toISOString();
   const previousStatus = item.status;
   const blockedBy = opts?.blockedBy ?? null;
 
@@ -695,9 +657,7 @@ export function blockWorkItem(
     ).run(blockedBy, itemId);
 
     const summary = `Work item "${item.title}" blocked${blockedBy ? ` by ${blockedBy}` : ""}`;
-    db.query(
-      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_blocked', NULL, ?, 'work_item', ?)"
-    ).run(now, itemId, summary);
+    logWorkItemEvent(db, "work_blocked", itemId, summary, null);
   })();
 
   return { item_id: itemId, blocked: true, blocked_by: blockedBy, previous_status: previousStatus };
@@ -710,19 +670,12 @@ export function unblockWorkItem(
   db: Database,
   itemId: string
 ): UnblockWorkItemResult {
-  const item = db
-    .query("SELECT * FROM work_items WHERE item_id = ?")
-    .get(itemId) as BlackboardWorkItem | null;
-
-  if (!item) {
-    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
-  }
+  const item = getWorkItemOrThrow(db, itemId);
 
   if (item.status !== "blocked" && item.status !== "waiting_for_response") {
     throw new BlackboardError(`Work item is not blocked: ${itemId}`, "NOT_BLOCKED");
   }
 
-  const now = new Date().toISOString();
   const restoredStatus = item.claimed_by ? "claimed" : "available";
 
   db.transaction(() => {
@@ -731,9 +684,7 @@ export function unblockWorkItem(
     ).run(restoredStatus, itemId);
 
     const summary = `Work item "${item.title}" unblocked, restored to ${restoredStatus}`;
-    db.query(
-      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_released', NULL, ?, 'work_item', ?)"
-    ).run(now, itemId, summary);
+    logWorkItemEvent(db, "work_released", itemId, summary, null);
   })();
 
   return { item_id: itemId, unblocked: true, restored_status: restoredStatus };
@@ -755,19 +706,12 @@ export function setWaitingForResponse(
   itemId: string,
   opts?: { blockedBy?: string }
 ): SetWaitingResult {
-  const item = db
-    .query("SELECT * FROM work_items WHERE item_id = ?")
-    .get(itemId) as BlackboardWorkItem | null;
-
-  if (!item) {
-    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
-  }
+  const item = getWorkItemOrThrow(db, itemId);
 
   if (item.status === "completed") {
     throw new BlackboardError(`Work item already completed: ${itemId}`, "ALREADY_COMPLETED");
   }
 
-  const now = new Date().toISOString();
   const previousStatus = item.status;
   const blockedBy = opts?.blockedBy ?? null;
 
@@ -777,9 +721,7 @@ export function setWaitingForResponse(
     ).run(blockedBy, itemId);
 
     const summary = `Work item "${item.title}" set to waiting_for_response${blockedBy ? ` (blocked by ${blockedBy})` : ""}`;
-    db.query(
-      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_blocked', NULL, ?, 'work_item', ?)"
-    ).run(now, itemId, summary);
+    logWorkItemEvent(db, "work_blocked", itemId, summary, null);
   })();
 
   return { item_id: itemId, waiting: true, previous_status: previousStatus };
@@ -805,13 +747,7 @@ export function deleteWorkItem(
   itemId: string,
   force: boolean = false
 ): DeleteWorkItemResult {
-  const item = db
-    .query("SELECT * FROM work_items WHERE item_id = ?")
-    .get(itemId) as BlackboardWorkItem | null;
-
-  if (!item) {
-    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
-  }
+  const item = getWorkItemOrThrow(db, itemId);
 
   if (item.status === "claimed" && !force) {
     throw new BlackboardError(
@@ -820,7 +756,6 @@ export function deleteWorkItem(
     );
   }
 
-  const now = new Date().toISOString();
   const previousStatus = item.status;
   const wasClaimed = item.claimed_by;
 
@@ -833,9 +768,7 @@ export function deleteWorkItem(
 
     // Emit work_deleted event
     const summary = `Work item "${item.title}" deleted (was ${previousStatus}${wasClaimed ? `, claimed by ${wasClaimed.slice(0, 12)}` : ""})`;
-    db.query(
-      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'work_deleted', NULL, ?, 'work_item', ?)"
-    ).run(now, itemId, summary);
+    logWorkItemEvent(db, "work_deleted", itemId, summary, null);
   })();
 
   return {
@@ -969,16 +902,7 @@ export function getWorkItemStatus(
   db: Database,
   itemId: string
 ): WorkItemDetail {
-  const item = db
-    .query("SELECT * FROM work_items WHERE item_id = ?")
-    .get(itemId) as BlackboardWorkItem | null;
-
-  if (!item) {
-    throw new BlackboardError(
-      `Work item not found: ${itemId}`,
-      "WORK_ITEM_NOT_FOUND"
-    );
-  }
+  const item = getWorkItemOrThrow(db, itemId);
 
   const history = db
     .query(
@@ -1005,13 +929,7 @@ export function updateWorkItemMetadata(
   itemId: string,
   metadataUpdates: Record<string, unknown>
 ): UpdateWorkItemMetadataResult {
-  const item = db
-    .query("SELECT * FROM work_items WHERE item_id = ?")
-    .get(itemId) as BlackboardWorkItem | null;
-
-  if (!item) {
-    throw new BlackboardError(`Work item not found: ${itemId}`, "WORK_ITEM_NOT_FOUND");
-  }
+  const item = getWorkItemOrThrow(db, itemId);
 
   // Parse existing metadata or start with empty object
   let existing: Record<string, unknown> = {};
