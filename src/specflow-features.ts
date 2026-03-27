@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
 import type { SpecFlowFeature, SpecFlowFeaturePhase, SpecFlowFeatureStatus } from "./types";
+import { parseDependencyRef, checkDependenciesComplete, unblockDependents } from "./dependencies";
 
 export interface CreateFeatureInput {
   feature_id: string;
@@ -16,12 +17,69 @@ export interface CreateFeatureInput {
   github_issue_number?: number;
   github_issue_url?: string;
   github_repo?: string;
+  /** Comma-separated feature IDs this feature depends on. Use `projectId:featureId` for cross-project deps. */
+  dependsOn?: string;
 }
 
 export interface ListFeaturesOptions {
   projectId?: string;
   phase?: string;
   status?: string;
+}
+
+/**
+ * Parse a dependency reference into a bare feature_id.
+ * Supports both `featureId` (same-project) and `projectId:featureId` (cross-project).
+ * The blackboard uses a global feature_id namespace so we look up by the bare ID.
+ *
+ * @deprecated Use parseDependencyRef from dependencies.ts instead
+ */
+export function parseDependencyId(ref: string): string {
+  return parseDependencyRef(ref);
+}
+
+/**
+ * Check whether all dependency features of a feature are completed.
+ *
+ * @param db - Database connection
+ * @param featureId - The feature whose dependencies to check (used to skip self-deps)
+ * @param dependsOn - Raw depends_on string from input (may differ from DB value on create)
+ * @returns true if all dependencies are in `completed` phase (or if there are none)
+ */
+export function checkFeatureDependenciesComplete(
+  db: Database,
+  featureId: string,
+  dependsOn: string | null
+): boolean {
+  return checkDependenciesComplete(
+    db,
+    featureId,
+    dependsOn,
+    "specflow_features",
+    "feature_id",
+    "phase = 'completed'"
+  );
+}
+
+/**
+ * Unblock all features that depend on the given completed feature, if all their
+ * other dependencies are also now completed. Returns the count of features unblocked.
+ */
+export function unblockDependentFeatures(
+  db: Database,
+  completedFeatureId: string
+): number {
+  return unblockDependents(
+    db,
+    completedFeatureId,
+    "specflow_features",
+    "feature_id",
+    "status",
+    "blocked",
+    "pending",
+    "phase = 'completed'",
+    "updated_at"
+  );
 }
 
 /**
@@ -33,7 +91,12 @@ export function createFeature(
 ): SpecFlowFeature {
   const now = new Date().toISOString();
   const phase = input.phase ?? "queued";
-  const status = input.status ?? "pending";
+  const dependsOn = input.dependsOn ?? null;
+  // Start blocked if dependencies are specified and not all completed
+  const initialStatus = input.status
+    ?? (dependsOn && !checkFeatureDependenciesComplete(db, input.feature_id, dependsOn)
+        ? "blocked"
+        : "pending");
   const main_branch = input.main_branch ?? "main";
   const max_failures = input.max_failures ?? 3;
   const source = input.source ?? "specflow";
@@ -45,12 +108,14 @@ export function createFeature(
         phase, status, main_branch, max_failures,
         source, source_ref,
         github_issue_number, github_issue_url, github_repo,
+        depends_on,
         created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?,
         ?, ?, ?,
+        ?,
         ?, ?
       )
     `).run(
@@ -59,7 +124,7 @@ export function createFeature(
       input.title,
       input.description ?? null,
       phase,
-      status,
+      initialStatus,
       main_branch,
       max_failures,
       source,
@@ -67,6 +132,7 @@ export function createFeature(
       input.github_issue_number ?? null,
       input.github_issue_url ?? null,
       input.github_repo ?? null,
+      dependsOn,
       now,
       now
     );
@@ -127,6 +193,7 @@ export function updateFeature(
     "github_issue_number", "github_issue_url", "github_repo",
     "source", "source_ref",
     "phase_started_at", "completed_at",
+    "depends_on",
   ];
 
   const setClauses: string[] = ["updated_at = ?"];
@@ -169,6 +236,7 @@ export function upsertFeature(
   if (input.github_repo) updates.github_repo = input.github_repo;
   if (input.main_branch) updates.main_branch = input.main_branch;
   if (input.description) updates.description = input.description;
+  if (input.dependsOn !== undefined) updates.depends_on = input.dependsOn ?? null;
   return updateFeature(db, input.feature_id, updates);
 }
 

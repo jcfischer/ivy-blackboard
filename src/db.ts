@@ -16,6 +16,7 @@ import {
   MIGRATE_V6_SQL,
   MIGRATE_V7_SQL,
   MIGRATE_V8_SQL,
+  MIGRATE_V9_SQL,
 } from "./schema";
 import type { DbOptions } from "./types";
 import { loadConfig } from "./config";
@@ -176,6 +177,11 @@ export function migrate(db: Database): void {
       version: 8,
       description: "Add depends_on column for task dependency tracking",
       fn: (db) => { db.exec(MIGRATE_V8_SQL); },
+    },
+    {
+      version: 9,
+      description: "Add depends_on column to specflow_features for feature dependency tracking",
+      fn: (db) => { db.exec(MIGRATE_V9_SQL); },
     },
   ];
 

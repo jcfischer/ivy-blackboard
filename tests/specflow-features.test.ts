@@ -10,6 +10,8 @@ import {
   updateFeature,
   listFeatures,
   getActionableFeatures,
+  checkFeatureDependenciesComplete,
+  unblockDependentFeatures,
 } from "../src/specflow-features";
 import type { Database } from "bun:sqlite";
 
@@ -311,5 +313,115 @@ describe("getActionableFeatures", () => {
     createFeature(db, { feature_id: "F-C1", project_id: "p1", title: "Completed", status: "succeeded", phase: "completed" });
     const result = getActionableFeatures(db, 4);
     expect(result.length).toBe(0);
+  });
+});
+
+// ─── Feature dependency tracking ──────────────────────────────────────────────
+
+describe("checkFeatureDependenciesComplete", () => {
+  test("returns true when depends_on is null", () => {
+    expect(checkFeatureDependenciesComplete(db, "F-X", null)).toBe(true);
+  });
+
+  test("returns true when all dependencies are completed", () => {
+    createFeature(db, { feature_id: "F-D1", project_id: "p1", title: "Done", phase: "completed" });
+    expect(checkFeatureDependenciesComplete(db, "F-X", "F-D1")).toBe(true);
+  });
+
+  test("returns false when a dependency is not completed", () => {
+    createFeature(db, { feature_id: "F-D2", project_id: "p1", title: "In progress", phase: "implementing" });
+    expect(checkFeatureDependenciesComplete(db, "F-X", "F-D2")).toBe(false);
+  });
+
+  test("returns false when a dependency does not exist", () => {
+    expect(checkFeatureDependenciesComplete(db, "F-X", "F-NONEXISTENT")).toBe(false);
+  });
+
+  test("handles multiple dependencies — all complete", () => {
+    createFeature(db, { feature_id: "F-E1", project_id: "p1", title: "Done 1", phase: "completed" });
+    createFeature(db, { feature_id: "F-E2", project_id: "p1", title: "Done 2", phase: "completed" });
+    expect(checkFeatureDependenciesComplete(db, "F-X", "F-E1,F-E2")).toBe(true);
+  });
+
+  test("handles multiple dependencies — one incomplete", () => {
+    createFeature(db, { feature_id: "F-F1", project_id: "p1", title: "Done", phase: "completed" });
+    createFeature(db, { feature_id: "F-F2", project_id: "p1", title: "In progress", phase: "tasked" });
+    expect(checkFeatureDependenciesComplete(db, "F-X", "F-F1,F-F2")).toBe(false);
+  });
+
+  test("parses cross-project projectId:featureId format", () => {
+    createFeature(db, { feature_id: "F-G1", project_id: "other-project", title: "Done", phase: "completed" });
+    expect(checkFeatureDependenciesComplete(db, "F-X", "other-project:F-G1")).toBe(true);
+  });
+});
+
+describe("createFeature with dependsOn", () => {
+  test("starts blocked when dependency is not completed", () => {
+    createFeature(db, { feature_id: "F-H1", project_id: "p1", title: "Dep" });
+    const child = createFeature(db, { feature_id: "F-H2", project_id: "p1", title: "Child", dependsOn: "F-H1" });
+    expect(child.status).toBe("blocked");
+    expect(child.depends_on).toBe("F-H1");
+  });
+
+  test("starts pending when all dependencies are completed", () => {
+    createFeature(db, { feature_id: "F-I1", project_id: "p1", title: "Dep", phase: "completed" });
+    const child = createFeature(db, { feature_id: "F-I2", project_id: "p1", title: "Child", dependsOn: "F-I1" });
+    expect(child.status).toBe("pending");
+  });
+
+  test("blocked features not returned by getActionableFeatures", () => {
+    createFeature(db, { feature_id: "F-J1", project_id: "p1", title: "Dep" });
+    createFeature(db, { feature_id: "F-J2", project_id: "p1", title: "Child", dependsOn: "F-J1" });
+    const actionable = getActionableFeatures(db, 4);
+    const ids = actionable.map(f => f.feature_id);
+    expect(ids).toContain("F-J1");
+    expect(ids).not.toContain("F-J2");
+  });
+});
+
+describe("unblockDependentFeatures", () => {
+  test("unblocks a feature when its dependency completes", () => {
+    createFeature(db, { feature_id: "F-K1", project_id: "p1", title: "Dep" });
+    createFeature(db, { feature_id: "F-K2", project_id: "p1", title: "Child", dependsOn: "F-K1" });
+    expect(getFeature(db, "F-K2")!.status).toBe("blocked");
+
+    // Complete the dependency
+    updateFeature(db, "F-K1", { phase: "completed" });
+    const count = unblockDependentFeatures(db, "F-K1");
+
+    expect(count).toBe(1);
+    expect(getFeature(db, "F-K2")!.status).toBe("pending");
+  });
+
+  test("does not unblock if other dependencies still incomplete", () => {
+    createFeature(db, { feature_id: "F-L1", project_id: "p1", title: "Dep 1" });
+    createFeature(db, { feature_id: "F-L2", project_id: "p1", title: "Dep 2" });
+    createFeature(db, { feature_id: "F-L3", project_id: "p1", title: "Child", dependsOn: "F-L1,F-L2" });
+
+    updateFeature(db, "F-L1", { phase: "completed" });
+    const count = unblockDependentFeatures(db, "F-L1");
+
+    expect(count).toBe(0);
+    expect(getFeature(db, "F-L3")!.status).toBe("blocked");
+  });
+
+  test("unblocks when all dependencies complete", () => {
+    createFeature(db, { feature_id: "F-M1", project_id: "p1", title: "Dep 1" });
+    createFeature(db, { feature_id: "F-M2", project_id: "p1", title: "Dep 2" });
+    createFeature(db, { feature_id: "F-M3", project_id: "p1", title: "Child", dependsOn: "F-M1,F-M2" });
+
+    updateFeature(db, "F-M1", { phase: "completed" });
+    unblockDependentFeatures(db, "F-M1");
+    updateFeature(db, "F-M2", { phase: "completed" });
+    const count = unblockDependentFeatures(db, "F-M2");
+
+    expect(count).toBe(1);
+    expect(getFeature(db, "F-M3")!.status).toBe("pending");
+  });
+
+  test("returns 0 when no features depend on completed feature", () => {
+    createFeature(db, { feature_id: "F-N1", project_id: "p1", title: "Solo" });
+    updateFeature(db, "F-N1", { phase: "completed" });
+    expect(unblockDependentFeatures(db, "F-N1")).toBe(0);
   });
 });
