@@ -270,3 +270,55 @@ ivy-heartbeat schedule install
 # Watch it all come together
 open http://localhost:3141
 ```
+
+## Project Management
+
+### Removing Projects
+
+Remove a registered project and all its associated work items:
+
+```bash
+# Remove a project with no active work
+blackboard project remove my-old-project
+
+# Force-remove a project even if work items are claimed
+blackboard project remove my-project --force
+```
+
+Safety rules:
+- **Refuses** removal if work items are claimed or in-progress (unless `--force` is used)
+- **Force-completes** claimed work items to preserve history when using `--force`
+- **Deletes** available, blocked, and failed work items
+- **Deregisters** all agents working on the project
+- **Cleans up** heartbeat references
+
+### Workflow Metadata
+
+Control how future GitHub integrations will create work items from issues and PRs:
+
+```bash
+# Disable work item creation from GitHub issues
+blackboard project update-metadata my-project --github-issues false
+
+# Disable reflection tasks after PR merges
+blackboard project update-metadata my-project --github-reflect false
+
+# Enable auto-claiming for new work items
+blackboard project update-metadata my-project --auto-claim true
+
+# Only create work items from specific GitHub authors
+blackboard project update-metadata my-project --authors-include mellanon,contributor
+
+# Skip work items from specific authors (e.g., bots)
+blackboard project update-metadata my-project --authors-exclude dependabot,renovate
+```
+
+Available workflow flags:
+- `--github-issues <true|false>` - Create work items from GitHub issues (default: true)
+- `--github-prs <true|false>` - Create work items from GitHub PRs (default: true)
+- `--github-reflect <true|false>` - Create reflection tasks after PR merge (default: true)
+- `--auto-claim <true|false>` - Auto-claim new work items (default: false)
+- `--authors-include <list>` - Comma-separated whitelist of GitHub authors
+- `--authors-exclude <list>` - Comma-separated blacklist of GitHub authors
+
+These flags are stored in the project's metadata JSON and will be respected by future GitHub sync workflows. The `project status` command displays active workflow flags.

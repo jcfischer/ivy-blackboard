@@ -1,8 +1,9 @@
 import { Command } from "commander";
 import type { CommandContext } from "../context";
-import { registerProject, listProjects, getProjectStatus } from "../project";
+import { registerProject, listProjects, getProjectStatus, removeProject, updateProjectMetadata } from "../project";
 import { formatJson, formatTable } from "../output";
 import { withErrorHandling } from "../errors";
+import type { ProjectWorkflowMetadata } from "../types";
 
 export function registerProjectCommands(
   parent: Command,
@@ -87,6 +88,26 @@ export function registerProjectCommands(
           if (p.local_path) console.log(`Path: ${p.local_path}`);
           if (p.remote_repo) console.log(`Repo: ${p.remote_repo}`);
           console.log(`Registered: ${p.registered_at}`);
+
+          // Display workflow metadata if present
+          if (p.metadata) {
+            try {
+              const meta = JSON.parse(p.metadata) as Partial<ProjectWorkflowMetadata>;
+              const flags: string[] = [];
+              if (meta.github_issues !== undefined) flags.push(`github_issues=${meta.github_issues}`);
+              if (meta.github_prs !== undefined) flags.push(`github_prs=${meta.github_prs}`);
+              if (meta.github_reflect !== undefined) flags.push(`github_reflect=${meta.github_reflect}`);
+              if (meta.auto_claim !== undefined) flags.push(`auto_claim=${meta.auto_claim}`);
+              if (meta.github_authors_include?.length) flags.push(`authors_include=[${meta.github_authors_include.join(",")}]`);
+              if (meta.github_authors_exclude?.length) flags.push(`authors_exclude=[${meta.github_authors_exclude.join(",")}]`);
+              if (flags.length > 0) {
+                console.log(`Workflow: ${flags.join(", ")}`);
+              }
+            } catch {
+              // Ignore parse errors, just don't display metadata
+            }
+          }
+
           console.log();
 
           // Agents section
@@ -125,6 +146,92 @@ export function registerProjectCommands(
               }
             }
           }
+        }
+      }, () => getContext().options.json)
+    );
+
+  project
+    .command("remove")
+    .description("Remove a project and all its work items")
+    .argument("<id>", "Project ID")
+    .option("--force", "Force removal even if work items are claimed/in-progress")
+    .action(
+      withErrorHandling(async (id: string, opts: { force?: boolean }) => {
+        const ctx = getContext();
+        const result = removeProject(ctx.db, id, opts.force ?? false);
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Removed project: ${result.display_name} (${result.project_id})`);
+          if (result.work_items_completed > 0) {
+            console.log(`  Force-completed ${result.work_items_completed} claimed work items`);
+          }
+          if (result.work_items_deleted > 0) {
+            console.log(`  Deleted ${result.work_items_deleted} available work items`);
+          }
+          if (result.agents_deregistered > 0) {
+            console.log(`  Deregistered ${result.agents_deregistered} agents`);
+          }
+        }
+      }, () => getContext().options.json)
+    );
+
+  project
+    .command("update-metadata")
+    .description("Update project workflow metadata (merges with existing)")
+    .argument("<id>", "Project ID")
+    .option("--github-issues <boolean>", "Create work items from GitHub issues (true|false)")
+    .option("--github-prs <boolean>", "Create work items from GitHub PRs (true|false)")
+    .option("--github-reflect <boolean>", "Create reflection tasks after PR merge (true|false)")
+    .option("--auto-claim <boolean>", "Auto-claim new work items (true|false)")
+    .option("--authors-include <list>", "Comma-separated list of GitHub authors to include")
+    .option("--authors-exclude <list>", "Comma-separated list of GitHub authors to exclude")
+    .action(
+      withErrorHandling(async (id: string, opts: {
+        githubIssues?: string;
+        githubPrs?: string;
+        githubReflect?: string;
+        autoClaim?: string;
+        authorsInclude?: string;
+        authorsExclude?: string;
+      }) => {
+        const ctx = getContext();
+        const updates: Record<string, unknown> = {};
+
+        // Parse boolean flags
+        if (opts.githubIssues !== undefined) {
+          updates.github_issues = opts.githubIssues === "true";
+        }
+        if (opts.githubPrs !== undefined) {
+          updates.github_prs = opts.githubPrs === "true";
+        }
+        if (opts.githubReflect !== undefined) {
+          updates.github_reflect = opts.githubReflect === "true";
+        }
+        if (opts.autoClaim !== undefined) {
+          updates.auto_claim = opts.autoClaim === "true";
+        }
+
+        // Parse array flags
+        if (opts.authorsInclude !== undefined) {
+          updates.github_authors_include = opts.authorsInclude.split(",").map(s => s.trim());
+        }
+        if (opts.authorsExclude !== undefined) {
+          updates.github_authors_exclude = opts.authorsExclude.split(",").map(s => s.trim());
+        }
+
+        if (Object.keys(updates).length === 0) {
+          throw new Error("No metadata updates provided. Use --github-issues, --github-prs, --github-reflect, --auto-claim, --authors-include, or --authors-exclude.");
+        }
+
+        const result = updateProjectMetadata(ctx.db, id, updates);
+
+        if (ctx.options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(`Updated metadata for project: ${result.display_name} (${result.project_id})`);
+          console.log(`Current metadata: ${JSON.stringify(result.metadata, null, 2)}`);
         }
       }, () => getContext().options.json)
     );

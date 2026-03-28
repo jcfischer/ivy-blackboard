@@ -45,10 +45,13 @@ export const KNOWN_EVENT_TYPES = [
   "work_rejected",
   "project_registered",
   "project_updated",
+  "project_removed",
   "heartbeat_received",
   "stale_locks_released",
   "content_blocked",
   "content_reviewed",
+  "work_quarantined",
+  "work_requeued",
 ] as const;
 export type KnownEventType = (typeof KNOWN_EVENT_TYPES)[number];
 
@@ -189,4 +192,24 @@ export interface MigrationEntry {
 export interface DbOptions {
   dbPath?: string;
   envPath?: string;
+}
+
+/**
+ * Project workflow metadata for GitHub integration control.
+ * Stored in projects.metadata JSON field. All fields are optional.
+ * Future GitHub sync workflows will read these flags to control behavior.
+ */
+export interface ProjectWorkflowMetadata {
+  /** Create work items from GitHub issues (default: true) */
+  github_issues?: boolean;
+  /** Create work items from GitHub PRs (default: true) */
+  github_prs?: boolean;
+  /** Create reflection work items after PR merge (default: true) */
+  github_reflect?: boolean;
+  /** Auto-claim new work items (default: false) */
+  auto_claim?: boolean;
+  /** Only create work items from these GitHub authors (whitelist) */
+  github_authors_include?: string[];
+  /** Skip work items from these GitHub authors (blacklist) */
+  github_authors_exclude?: string[];
 }

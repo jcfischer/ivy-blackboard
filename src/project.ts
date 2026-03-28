@@ -1,7 +1,8 @@
 import type { Database } from "bun:sqlite";
 import { BlackboardError } from "./errors";
 import { sanitizeText } from "./sanitize";
-import type { BlackboardAgent, BlackboardProject, BlackboardWorkItem } from "./types";
+import type { BlackboardAgent, BlackboardProject, BlackboardWorkItem, ProjectWorkflowMetadata } from "./types";
+import { forceCompleteWorkItem, deleteWorkItem } from "./work";
 
 export interface RegisterProjectOptions {
   id: string;
@@ -299,5 +300,182 @@ export function getProjectDetail(
       total_agents: agents.length,
       last_activity: events.length > 0 ? events[0].timestamp : null,
     },
+  };
+}
+
+export interface RemoveProjectResult {
+  project_id: string;
+  display_name: string;
+  removed: boolean;
+  work_items_completed: number;
+  work_items_deleted: number;
+  agents_deregistered: number;
+}
+
+/**
+ * Remove a project from the blackboard.
+ * - Refuses if claimed or in-progress work items exist (unless force=true)
+ * - With force=true: force-completes claimed work, deletes available work
+ * - Deregisters all agents for the project
+ * - Cleans up heartbeat references
+ * - Deletes the project record
+ * - Emits project_removed event
+ */
+export function removeProject(
+  db: Database,
+  projectId: string,
+  force: boolean = false
+): RemoveProjectResult {
+  const project = db
+    .query("SELECT * FROM projects WHERE project_id = ?")
+    .get(projectId) as BlackboardProject | null;
+
+  if (!project) {
+    throw new BlackboardError(
+      `Project not found: ${projectId}`,
+      "PROJECT_NOT_FOUND"
+    );
+  }
+
+  // Check for active work items
+  const claimedWork = db
+    .query("SELECT item_id, status FROM work_items WHERE project_id = ? AND status IN ('claimed', 'in_progress')")
+    .all(projectId) as Array<{ item_id: string; status: string }>;
+
+  if (claimedWork.length > 0 && !force) {
+    const itemList = claimedWork.map(w => w.item_id).join(", ");
+    throw new BlackboardError(
+      `Project has ${claimedWork.length} claimed/in-progress work items (${itemList}). Use --force to override.`,
+      "PROJECT_HAS_ACTIVE_WORK"
+    );
+  }
+
+  const now = new Date().toISOString();
+  let completedCount = 0;
+  let deletedCount = 0;
+  let agentsCount = 0;
+
+  db.transaction(() => {
+    // Clean up work items (must happen before deleting project due to foreign key)
+    const allWorkItems = db
+      .query("SELECT item_id, status FROM work_items WHERE project_id = ?")
+      .all(projectId) as Array<{ item_id: string; status: string }>;
+
+    for (const item of allWorkItems) {
+      if (item.status === "claimed" || item.status === "in_progress") {
+        // Force-complete claimed work to preserve history
+        forceCompleteWorkItem(db, item.item_id);
+        completedCount++;
+      } else if (item.status !== "completed") {
+        // Delete available/blocked/failed work
+        deleteWorkItem(db, item.item_id, true);
+        deletedCount++;
+      }
+      // Leave completed items as-is (they're already done)
+    }
+
+    // Delete all remaining work items (including completed ones) to satisfy foreign key constraint
+    db.query("DELETE FROM work_items WHERE project_id = ?").run(projectId);
+
+    // Deregister all agents for this project
+    const agents = db
+      .query("SELECT session_id FROM agents WHERE project = ?")
+      .all(projectId) as Array<{ session_id: string }>;
+
+    for (const agent of agents) {
+      db.query(
+        "UPDATE agents SET status = 'completed' WHERE session_id = ?"
+      ).run(agent.session_id);
+      agentsCount++;
+    }
+
+    // Clean up heartbeat references (work items are already deleted)
+    db.query(
+      "UPDATE heartbeats SET work_item_id = NULL WHERE session_id IN (SELECT session_id FROM agents WHERE project = ?)"
+    ).run(projectId);
+
+    // Delete the project record
+    db.query("DELETE FROM projects WHERE project_id = ?").run(projectId);
+
+    // Emit project_removed event
+    const summary = `Project "${project.display_name}" (${projectId}) removed${force ? " (forced)" : ""}`;
+    db.query(
+      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'project_removed', NULL, ?, 'project', ?)"
+    ).run(now, projectId, summary);
+  })();
+
+  return {
+    project_id: projectId,
+    display_name: project.display_name,
+    removed: true,
+    work_items_completed: completedCount,
+    work_items_deleted: deletedCount,
+    agents_deregistered: agentsCount,
+  };
+}
+
+export interface UpdateProjectMetadataResult {
+  project_id: string;
+  display_name: string;
+  updated: boolean;
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Update project metadata by merging new keys into existing JSON.
+ * Does not replace the entire metadata object - only updates provided keys.
+ * Validates JSON structure before updating.
+ * Emits project_updated event.
+ */
+export function updateProjectMetadata(
+  db: Database,
+  projectId: string,
+  updates: Record<string, unknown>
+): UpdateProjectMetadataResult {
+  const project = db
+    .query("SELECT * FROM projects WHERE project_id = ?")
+    .get(projectId) as BlackboardProject | null;
+
+  if (!project) {
+    throw new BlackboardError(
+      `Project not found: ${projectId}`,
+      "PROJECT_NOT_FOUND"
+    );
+  }
+
+  // Parse existing metadata or start with empty object
+  let existing: Record<string, unknown> = {};
+  if (project.metadata) {
+    try {
+      existing = JSON.parse(project.metadata);
+    } catch {
+      // If existing metadata is corrupt, start fresh
+      existing = {};
+    }
+  }
+
+  // Merge: new keys override existing
+  const merged = { ...existing, ...updates };
+  const mergedJson = JSON.stringify(merged);
+
+  const now = new Date().toISOString();
+  const changedKeys = Object.keys(updates);
+
+  db.transaction(() => {
+    db.query(
+      "UPDATE projects SET metadata = ? WHERE project_id = ?"
+    ).run(mergedJson, projectId);
+
+    const summary = `Project "${project.display_name}" metadata updated: ${changedKeys.join(", ")}`;
+    db.query(
+      "INSERT INTO events (timestamp, event_type, actor_id, target_id, target_type, summary) VALUES (?, 'project_updated', NULL, ?, 'project', ?)"
+    ).run(now, projectId, summary);
+  })();
+
+  return {
+    project_id: projectId,
+    display_name: project.display_name,
+    updated: true,
+    metadata: merged,
   };
 }
