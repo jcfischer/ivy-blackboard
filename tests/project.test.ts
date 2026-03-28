@@ -482,3 +482,150 @@ describe("CLI project list", () => {
     expect(typeof json.items[0].active_agents).toBe("number");
   });
 });
+
+// T-6: Project removal
+describe("removeProject", () => {
+  test("removes project with no work items", async () => {
+    const { registerProject, removeProject } = await import("../src/project");
+    registerProject(db, { id: "empty-proj", name: "Empty Project" });
+
+    const result = removeProject(db, "empty-proj");
+    expect(result.removed).toBe(true);
+    expect(result.project_id).toBe("empty-proj");
+    expect(result.work_items_completed).toBe(0);
+    expect(result.work_items_deleted).toBe(0);
+
+    // Verify project is gone
+    const check = db.query("SELECT * FROM projects WHERE project_id = ?").get("empty-proj");
+    expect(check).toBeNull();
+
+    // Verify event was logged
+    const event = db.query("SELECT * FROM events WHERE event_type = 'project_removed' AND target_id = ?").get("empty-proj") as any;
+    expect(event).not.toBeNull();
+    expect(event.summary).toContain("Empty Project");
+  });
+
+  test("refuses to remove project with claimed work", async () => {
+    const { registerProject, removeProject } = await import("../src/project");
+    const { registerAgent } = await import("../src/agent");
+    const { createWorkItem, claimWorkItem } = await import("../src/work");
+
+    registerProject(db, { id: "busy-proj", name: "Busy Project" });
+    const agent = registerAgent(db, { name: "Worker", project: "busy-proj" });
+    createWorkItem(db, { id: "claimed-work", title: "Claimed Task", project: "busy-proj" });
+    claimWorkItem(db, "claimed-work", agent.session_id);
+
+    expect(() => removeProject(db, "busy-proj")).toThrow("claimed/in-progress work items");
+  });
+
+  test("force removes project with claimed work", async () => {
+    const { registerProject, removeProject } = await import("../src/project");
+    const { registerAgent } = await import("../src/agent");
+    const { createWorkItem, claimWorkItem } = await import("../src/work");
+
+    registerProject(db, { id: "force-proj", name: "Force Project" });
+    const agent = registerAgent(db, { name: "Worker", project: "force-proj" });
+    createWorkItem(db, { id: "claimed-work-2", title: "Claimed Task", project: "force-proj" });
+    claimWorkItem(db, "claimed-work-2", agent.session_id);
+
+    const result = removeProject(db, "force-proj", true);
+    expect(result.removed).toBe(true);
+    expect(result.work_items_completed).toBe(1);
+
+    // Verify work item was deleted (happens after completion as part of cleanup)
+    const item = db.query("SELECT * FROM work_items WHERE item_id = ?").get("claimed-work-2");
+    expect(item).toBeNull();
+
+    // Verify project is gone
+    const check = db.query("SELECT * FROM projects WHERE project_id = ?").get("force-proj");
+    expect(check).toBeNull();
+  });
+
+  test("deletes available work and completes claimed work", async () => {
+    const { registerProject, removeProject } = await import("../src/project");
+    const { registerAgent } = await import("../src/agent");
+    const { createWorkItem, claimWorkItem } = await import("../src/work");
+
+    registerProject(db, { id: "mixed-proj", name: "Mixed Project" });
+    const agent = registerAgent(db, { name: "Worker", project: "mixed-proj" });
+
+    createWorkItem(db, { id: "avail-1", title: "Available 1", project: "mixed-proj" });
+    createWorkItem(db, { id: "claimed-1", title: "Claimed 1", project: "mixed-proj" });
+    claimWorkItem(db, "claimed-1", agent.session_id);
+
+    const result = removeProject(db, "mixed-proj", true);
+    expect(result.work_items_deleted).toBe(1);  // available work
+    expect(result.work_items_completed).toBe(1);  // claimed work
+  });
+
+  test("deregisters agents when removing project", async () => {
+    const { registerProject, removeProject } = await import("../src/project");
+    const { registerAgent } = await import("../src/agent");
+
+    registerProject(db, { id: "agent-proj", name: "Agent Project" });
+    registerAgent(db, { name: "Agent1", project: "agent-proj" });
+    registerAgent(db, { name: "Agent2", project: "agent-proj" });
+
+    const result = removeProject(db, "agent-proj");
+    expect(result.agents_deregistered).toBe(2);
+
+    // Verify agents marked as completed
+    const agents = db.query("SELECT status FROM agents WHERE project = ?").all("agent-proj") as any[];
+    expect(agents.every(a => a.status === "completed")).toBe(true);
+  });
+});
+
+// T-7: Project metadata updates
+describe("updateProjectMetadata", () => {
+  test("merges new keys into existing metadata", async () => {
+    const { registerProject, updateProjectMetadata } = await import("../src/project");
+
+    registerProject(db, {
+      id: "meta-proj",
+      name: "Meta Project",
+      metadata: JSON.stringify({ existing_key: "value" }),
+    });
+
+    const result = updateProjectMetadata(db, "meta-proj", {
+      github_issues: false,
+      github_prs: true,
+    });
+
+    expect(result.updated).toBe(true);
+    expect(result.metadata.existing_key).toBe("value");
+    expect(result.metadata.github_issues).toBe(false);
+    expect(result.metadata.github_prs).toBe(true);
+  });
+
+  test("handles project with no existing metadata", async () => {
+    const { registerProject, updateProjectMetadata } = await import("../src/project");
+
+    registerProject(db, { id: "new-meta", name: "New Meta" });
+
+    const result = updateProjectMetadata(db, "new-meta", { auto_claim: true });
+
+    expect(result.metadata.auto_claim).toBe(true);
+  });
+
+  test("emits project_updated event", async () => {
+    const { registerProject, updateProjectMetadata } = await import("../src/project");
+
+    registerProject(db, { id: "event-meta", name: "Event Meta" });
+    updateProjectMetadata(db, "event-meta", { github_reflect: false });
+
+    const event = db.query(
+      "SELECT * FROM events WHERE event_type = 'project_updated' AND target_id = ? ORDER BY timestamp DESC"
+    ).get("event-meta") as any;
+
+    expect(event).not.toBeNull();
+    expect(event.summary).toContain("github_reflect");
+  });
+
+  test("throws for non-existent project", async () => {
+    const { updateProjectMetadata } = await import("../src/project");
+
+    expect(() =>
+      updateProjectMetadata(db, "nonexistent", { github_issues: false })
+    ).toThrow("not found");
+  });
+});

@@ -60,8 +60,8 @@ describe("types", () => {
   });
 
   describe("EventType", () => {
-    it("KNOWN_EVENT_TYPES lists 20 known blackboard event types", () => {
-      expect(KNOWN_EVENT_TYPES).toHaveLength(20);
+    it("KNOWN_EVENT_TYPES lists 23 known blackboard event types", () => {
+      expect(KNOWN_EVENT_TYPES).toHaveLength(23);
       expect(KNOWN_EVENT_TYPES).toContain("agent_registered");
       expect(KNOWN_EVENT_TYPES).toContain("agent_deregistered");
       expect(KNOWN_EVENT_TYPES).toContain("agent_stale");
