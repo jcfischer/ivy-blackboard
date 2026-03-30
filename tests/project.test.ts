@@ -573,6 +573,43 @@ describe("removeProject", () => {
     const agents = db.query("SELECT status FROM agents WHERE project = ?").all("agent-proj") as any[];
     expect(agents.every(a => a.status === "completed")).toBe(true);
   });
+
+  test("removes project with heartbeats referencing work items", async () => {
+    const { registerProject, removeProject } = await import("../src/project");
+    const { registerAgent } = await import("../src/agent");
+    const { createWorkItem } = await import("../src/work");
+
+    registerProject(db, { id: "heartbeat-proj", name: "Heartbeat Project" });
+    const agent = registerAgent(db, { name: "Worker", project: "heartbeat-proj" });
+    createWorkItem(db, { id: "hb-work-1", title: "Task with Heartbeat", project: "heartbeat-proj" });
+
+    // Manually create heartbeat referencing the work item
+    const now = new Date().toISOString();
+    db.query(
+      "INSERT INTO heartbeats (session_id, timestamp, progress, work_item_id) VALUES (?, ?, ?, ?)"
+    ).run(agent.session_id, now, "Working on task", "hb-work-1");
+
+    // Verify heartbeat exists
+    const heartbeatBefore = db.query("SELECT * FROM heartbeats WHERE session_id = ?").get(agent.session_id) as any;
+    expect(heartbeatBefore).not.toBeNull();
+    expect(heartbeatBefore.work_item_id).toBe("hb-work-1");
+
+    // Remove project should succeed without FK constraint error
+    const result = removeProject(db, "heartbeat-proj", true);
+    expect(result.removed).toBe(true);
+
+    // Verify heartbeat work_item_id was nulled (heartbeat record persists)
+    const heartbeatAfter = db.query("SELECT * FROM heartbeats WHERE session_id = ?").get(agent.session_id) as any;
+    expect(heartbeatAfter).not.toBeNull();
+    expect(heartbeatAfter.work_item_id).toBeNull();
+    expect(heartbeatAfter.progress).toBe("Working on task");  // Other fields preserved
+
+    // Verify project and work item are gone
+    const projectCheck = db.query("SELECT * FROM projects WHERE project_id = ?").get("heartbeat-proj");
+    expect(projectCheck).toBeNull();
+    const workCheck = db.query("SELECT * FROM work_items WHERE item_id = ?").get("hb-work-1");
+    expect(workCheck).toBeNull();
+  });
 });
 
 // T-7: Project metadata updates
