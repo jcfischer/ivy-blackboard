@@ -356,6 +356,12 @@ export function removeProject(
   let agentsCount = 0;
 
   db.transaction(() => {
+    // Clear heartbeat references to work items before deletion
+    // This prevents FK constraint violations when deleting work items
+    db.query(
+      "UPDATE heartbeats SET work_item_id = NULL WHERE work_item_id IN (SELECT item_id FROM work_items WHERE project_id = ?)"
+    ).run(projectId);
+
     // Clean up work items (must happen before deleting project due to foreign key)
     const allWorkItems = db
       .query("SELECT item_id, status FROM work_items WHERE project_id = ?")
@@ -388,11 +394,6 @@ export function removeProject(
       ).run(agent.session_id);
       agentsCount++;
     }
-
-    // Clean up heartbeat references (work items are already deleted)
-    db.query(
-      "UPDATE heartbeats SET work_item_id = NULL WHERE session_id IN (SELECT session_id FROM agents WHERE project = ?)"
-    ).run(projectId);
 
     // Delete the project record
     db.query("DELETE FROM projects WHERE project_id = ?").run(projectId);
